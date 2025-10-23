@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Multi-Section Accelerometer Plots</title>
+  <script src="https://cdn.plot.ly/plotly-3.1.0.min.js" charset="utf-8"></script>
+  <script src="plot.js" defer></script> <!-- Custom plotting logic -->
+  <style>
+    .section {
+      margin-bottom: 40px;
+    }
+
+    .section-title {
+      font-size: 1.5em;
+      margin-bottom: 10px;
+    }
+
+    .charts-row {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 20px;
+      justify-content: space-between;
+    }
+
+    .plot {
+      flex: 1;
+      min-width: 300px;
+      height: 300px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Multi-Sensor Accelerometer Dashboard</h1>
+
+  <!-- Section 1 -->
+  <div class="section" id="section1">
+    <div class="section-title">Accelerometer</div>
+    <div class="charts-row">
+      <div id="Accel-xyz" class="plot" data-qty="Accel"></div>
+      <div id="Accel-theta" class="plot"></div>
+      <div id="Accel-phi" class="plot"></div>
+    </div>
+  </div>
+
+  <!-- Section 2 -->
+  <div class="section" id="section2">
+    <div class="section-title">Magnetometer</div>
+    <div class="charts-row">
+      <div id="Mag-xyz" class="plot" data-qty="Gyro"></div>
+      <div id="Mag-theta" class="plot"></div>
+      <div id="Mag-phi" class="plot"></div>
+    </div>
+  </div>
+
+  <script>
+    window.onload = function () {
+      if (typeof initPlots === 'function') {
+        initPlots("Accel");
+        initPlots("Mag");
+      } else {
+        console.error("initPlots is not defined. Is plot.js loaded correctly?");
+      }
+
+      let events = new EventSource("/events");
+      events.onmessage = function (event) {
+        try {
+          const measurements = JSON.parse(event.data);
+          for (const { measurement, timestamp } of measurements) {
+            if (!measurement || typeof timestamp !== 'number') {
+              console.log("Invalid measurement or timestamp");
+              continue;
+            }
+            // Extract enum variant
+            const variantNames = Object.keys(measurement);
+            if (variantNames.length !== 1) {
+              console.log('Invalid CommonMeasurement: expected exactly one variant');
+              continue;
+            }
+            const variant = variantNames[0];
+            const values = measurement[variant];
+            switch (variant) {
+              case 'Accel':
+              case 'Mag':
+                if (!Array.isArray(values) || values.length !== 3) {
+                  console.log(`${variant} must have 3 numeric values`);
+                }
+                updatePlots(variant, timestamp * 1e-6, values[0], values[1], values[2]);
+            }
+          }
+        } catch (err) {
+          console.error("Invalid data format", event.data, err);
+        }
+      };
+    };
+  </script>
+</body>
+
+</html>

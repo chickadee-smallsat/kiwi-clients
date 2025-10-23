@@ -1,0 +1,5 @@
+matplotlib
+pyside6
+pandas
+dask
+crc
