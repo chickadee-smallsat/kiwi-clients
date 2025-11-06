@@ -86,7 +86,7 @@ def draw_loop(
     # |_______|_________________|
     grid = GridSpec(
         7, 9,
-        height_ratios=[0.1, 0.1, 1, 1, 1, 1, 1], # Legend, 5 line plots
+        height_ratios=[0.2, 0.1, 1, 1, 1, 1, 1], # Legend, 5 line plots
         width_ratios=[1]*4 + [0.2] + [1]*4, # Line plots, gap, polar plots
         hspace=0.05, wspace=0.3
     )
@@ -105,7 +105,7 @@ def draw_loop(
     )
 
     # First row for button, use the full width
-    button_ax = fig.add_subplot(grid[0, :])
+    button_ax = fig.add_subplot(grid[0, 3:6])
     ncfile = NcDataset(datapath, button_ax)
 
     # First row for legend, use the left section only

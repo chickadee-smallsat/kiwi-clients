@@ -1,6 +1,6 @@
 use std::{io, sync::Arc};
 
-use actix_files::NamedFile;
+// use actix_files::NamedFile;
 use actix_web::{App, HttpServer, Responder, get, middleware::Logger, web};
 
 mod broadcast;
@@ -46,12 +46,14 @@ async fn main() -> io::Result<()> {
 
 #[get("/")]
 async fn index() -> impl Responder {
-    NamedFile::open_async("./web/index.html").await.unwrap()
+    // NamedFile::open_async("./web/index.html").await.unwrap()
+    web::Html::new(include_str!("../web/index.html")).to_owned()
 }
 
 #[get("/plot.js")]
 async fn plot_js() -> impl Responder {
-    NamedFile::open_async("./web/plot.js").await.unwrap()
+    // NamedFile::open_async("./web/plot.js").await.unwrap()
+    web::Html::new(include_str!("../web/plot.js")).to_owned()
 }
 
 #[get("/events")]
