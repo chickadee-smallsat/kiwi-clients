@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import datetime
+from pathlib import Path
 import socket
 import struct
 from time import perf_counter_ns
@@ -68,7 +69,7 @@ class DataRate:
 # %% UDP server loop
 
 
-def udp_loop(host: str, port: int, winsize: int = 2000):
+def udp_loop(host: str, port: int, datapath: Path = Path.cwd() / 'data', winsize: int = 2000):
     """UDP client loop.
 
     Args:
@@ -111,7 +112,7 @@ def udp_loop(host: str, port: int, winsize: int = 2000):
                 )
                 # Start plot thread for client
                 proc = Process(None, draw_loop, args=(
-                    loc, request, response, info, shutdown, winsize))
+                    loc, request, response, info, shutdown, datapath, winsize))
                 proc.start()
                 threads[loc] = proc
                 clients[loc] = client

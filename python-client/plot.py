@@ -1,5 +1,6 @@
 # %%
 from datetime import datetime
+from pathlib import Path
 from queue import Empty
 from threading import Thread
 from typing import Any, Tuple
@@ -15,6 +16,8 @@ from multiprocessing import Queue, Event
 from decoder import xyz_to_rtp
 import warnings
 from pandas import DataFrame
+
+from nc_thread import NcDataset
 
 # Ignore matplotlib warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -47,6 +50,7 @@ def draw_loop(
         response: Queue,
         info: Queue,
         shutdown: Any,
+        datapath: Path = Path.cwd() / 'data',
         winsize: int = 1000):
     """A drawing loop that requests data from the UDP server :func:`udp_loop`
     and plots the data in real-time.
@@ -57,6 +61,7 @@ def draw_loop(
         response (Queue): Response from UDP server: tuple of DataFrames (accel, gyro, mag, baro)
         info (Queue): Info queue from UDP server: (source: (ip, port), datetime, bitrate, byteunit, packrate, packunit)
         shutdown (Event): Signal to UDP server that the drawing loop is shutting down
+        datapath (Path): Path to store NetCDF files. Defaults to current working directory / 'data'.
         winsize (int, optional): Window size in milliseconds for displaying data. Defaults to 1000.
     """
     # The UDP source address
@@ -80,12 +85,12 @@ def draw_loop(
     # | Alt   |                 |
     # |_______|_________________|
     grid = GridSpec(
-        6, 9,
-        height_ratios=[0.1, 1, 1, 1, 1, 1], # Legend, 5 line plots
+        7, 9,
+        height_ratios=[0.1, 0.1, 1, 1, 1, 1, 1], # Legend, 5 line plots
         width_ratios=[1]*4 + [0.2] + [1]*4, # Line plots, gap, polar plots
         hspace=0.05, wspace=0.3
     )
-    START = 1 # Start row for plots
+    START = 2 # Start row for plots
     fig = plt.figure(figsize=(FIG_WID, FIG_HEI), dpi=DPI, animated=True)
     # Set window title
     fig.canvas.manager.set_window_title(  # type: ignore
@@ -98,6 +103,11 @@ def draw_loop(
         0.95, 0.95, "Waiting for data...",
         fontsize=8, ha='right', va='center'
     )
+
+    # First row for button, use the full width
+    button_ax = fig.add_subplot(grid[0, :])
+    ncfile = NcDataset(datapath, button_ax)
+
     # First row for legend, use the left section only
     legend_ax = fig.add_subplot(grid[START-1, 1:3])
     
@@ -240,6 +250,7 @@ def draw_loop(
             if df is None:
                 continue
             # Probably received the correct data, which is four dataframes
+            ncfile.update(df)
             try:
                 acceldf, gyrodf, magdf, barodf = df
             except ValueError:
@@ -324,4 +335,5 @@ def draw_loop(
             plt.close('all')
             exit(0)
     shutdown.set()
+    ncfile.close()
     print(f"[{ip}:{port}] Done receiving data")

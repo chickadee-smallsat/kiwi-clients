@@ -1,5 +1,6 @@
 # %%
 from datetime import datetime
+from pathlib import Path
 from threading import Thread
 import time
 from typing import Any, Tuple
@@ -31,6 +32,9 @@ if __name__ == "__main__":
     parser.add_argument(
         '--host', type=str, default='0.0.0.0', help='Listen address (default: 0.0.0.0)'
     )
+    parser.add_argument(
+        '--datapath', type=Path, default=Path.cwd() / 'data', help='Path to store NetCDF files'
+    )
     args = parser.parse_args()
     winsize = args.window*1000
     if winsize < 1000:
@@ -40,4 +44,4 @@ if __name__ == "__main__":
         print(f"Window size {winsize} ms is too large, setting to 10000 ms")
         winsize = 10000
     # Main thread loops here
-    udp_loop(args.host, args.port, winsize=winsize)
+    udp_loop(args.host, args.port, datapath=args.datapath, winsize=winsize)
