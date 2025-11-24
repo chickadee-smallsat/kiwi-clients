@@ -26,6 +26,15 @@ winget install --id Anaconda.Miniconda3 -e --silent
 echo Miniconda installed.
 echo.
 
+:: Get System PATH
+for /f "tokens=3*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path') do set syspath=%%A%%B
+
+:: Get User Path
+for /f "tokens=3*" %%A in ('reg query "HKCU\Environment" /v Path') do set userpath=%%A%%B
+
+:: Set Refreshed Path
+set PATH=%userpath%;%syspath%
+
 :: ------------------------------------------------
 echo Initializing conda...
 echo ------------------------------------------------
@@ -44,28 +53,21 @@ if not exist "%REPO_DIR%" (
     git pull
 )
 
+set "PYTHON_EXE=%USERPROFILE%\Miniconda3\python.exe"
 :: ------------------------------------------------
 echo Installing requirements...
 echo ------------------------------------------------
-if exist "%REPO_DIR%\requirements.txt" (
-    python -m pip install -r "%REPO_DIR%\requirements.txt"
+if exist "%REPO_DIR%\python-client\requirements.txt" (
+    %PYTHON_EXE% -m pip install -r "%REPO_DIR%\python-client\requirements.txt"
 )
 
 :: ------------------------------------------------
 echo Creating desktop shortcut...
 echo ------------------------------------------------
 
-set "PYTHON_EXE=%USERPROFILE%\Miniconda3\python.exe"
 set "SHORTCUT=%USERPROFILE%\Desktop\%SHORTCUT_NAME%"
 
-powershell -Command ^
- "$ws = New-Object -ComObject WScript.Shell; ^
-  $s = $ws.CreateShortcut('%SHORTCUT%'); ^
-  $s.TargetPath = '%PYTHON_EXE%'; ^
-  $s.Arguments = '""%PY_SCRIPT%""'; ^
-  $s.WorkingDirectory = '%REPO_DIR%'; ^
-  $s.IconLocation = '%PYTHON_EXE%'; ^
-  $s.Save()"
+powershell -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%SHORTCUT%'); $s.TargetPath = '%PYTHON_EXE%'; $s.Arguments = '""%PY_SCRIPT%""'; $s.WorkingDirectory = '%REPO_DIR%'; $s.IconLocation = '%PYTHON_EXE%'; $s.Save()"
 
 echo Shortcut created on Desktop: %SHORTCUT%
 echo.
