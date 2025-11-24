@@ -3,4 +3,5 @@ pyside6
 pandas
 dask
 crc
+netcdf4
 openpyxl
