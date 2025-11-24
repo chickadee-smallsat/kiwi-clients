@@ -8,7 +8,7 @@ from multiprocessing import Queue, Process, Event
 from threading import Thread
 from typing import Any, Optional, Tuple
 from dataclasses import dataclass
-from plot import draw_loop
+from plot import SaveKind, draw_loop
 
 from pandas import DataFrame
 
@@ -69,12 +69,14 @@ class DataRate:
 # %% UDP server loop
 
 
-def udp_loop(host: str, port: int, datapath: Path = Path.cwd() / 'data', winsize: int = 2000):
+def udp_loop(host: str, port: int, datapath: Path = Path.cwd() / 'data', savekind: SaveKind = 'excel', winsize: int = 2000):
     """UDP client loop.
 
     Args:
         host (str): Address to bind to.
         port (int): Port to listen for UDP packets.
+        datapath (Path, optional): Path to store data files. Defaults to Path.cwd() / 'data'.
+        savekind (SaveKind, optional): Kind of data storage: 'excel' or 'netcdf'. Defaults to 'excel'.
         winsize (int, optional): Window size in milliseconds for displaying data. Defaults to 2000.
     """
     # Dictionary of clients
@@ -112,7 +114,7 @@ def udp_loop(host: str, port: int, datapath: Path = Path.cwd() / 'data', winsize
                 )
                 # Start plot thread for client
                 proc = Process(None, draw_loop, args=(
-                    loc, request, response, info, shutdown, datapath, winsize))
+                    loc, request, response, info, shutdown, datapath, savekind, winsize))
                 proc.start()
                 threads[loc] = proc
                 clients[loc] = client

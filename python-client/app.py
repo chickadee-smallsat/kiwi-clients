@@ -1,23 +1,6 @@
 # %%
-from datetime import datetime
 from pathlib import Path
-from threading import Thread
-import time
-from typing import Any, Tuple
-import matplotlib
-from time import perf_counter_ns
-from matplotlib.axes import Axes
-from matplotlib.gridspec import GridSpec
-import numpy as np
-import pandas as pd
-import matplotlib
-import matplotlib.pyplot as plt
-from queue import Queue, Empty
-from decoder import xyz_to_rtp
 from udp_thread import udp_loop
-import warnings
-from pandas import DataFrame
-from plot import draw_loop
 
 # %%
 if __name__ == "__main__":
@@ -35,6 +18,10 @@ if __name__ == "__main__":
     parser.add_argument(
         '--datapath', type=Path, default=Path.cwd() / 'data', help='Path to store NetCDF files'
     )
+    parser.add_argument(
+        '--savekind', type=str, choices=['excel', 'netcdf'], default='excel',
+        help='Kind of data storage: excel or netcdf (default: netcdf)'
+    )
     args = parser.parse_args()
     winsize = args.window*1000
     if winsize < 1000:
@@ -44,4 +31,9 @@ if __name__ == "__main__":
         print(f"Window size {winsize} ms is too large, setting to 10000 ms")
         winsize = 10000
     # Main thread loops here
-    udp_loop(args.host, args.port, datapath=args.datapath, winsize=winsize)
+    udp_loop(
+        args.host, args.port,
+        datapath=args.datapath,
+        winsize=winsize,
+        savekind=args.savekind
+    )

@@ -3,3 +3,4 @@ pyside6
 pandas
 dask
 crc
+openpyxl

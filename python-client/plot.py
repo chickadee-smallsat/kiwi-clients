@@ -2,8 +2,7 @@
 from datetime import datetime
 from pathlib import Path
 from queue import Empty
-from threading import Thread
-from typing import Any, Tuple
+from typing import Any, Literal
 import matplotlib
 from time import perf_counter_ns
 from matplotlib.axes import Axes
@@ -15,9 +14,10 @@ import matplotlib.pyplot as plt
 from multiprocessing import Queue, Event
 from decoder import xyz_to_rtp
 import warnings
-from pandas import DataFrame
 
+from storesystem import StoreSystem
 from nc_thread import NcDataset
+from xlsx_thread import XlsxDataset
 
 # Ignore matplotlib warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -29,6 +29,9 @@ matplotlib.rc(
 )
 
 matplotlib.use('QtAgg')  # Use TkAgg backend for interactive plotting
+
+# %%
+SaveKind = Literal['excel', 'netcdf']
 
 # %%
 
@@ -51,6 +54,7 @@ def draw_loop(
         info: Queue,
         shutdown: Any,
         datapath: Path = Path.cwd() / 'data',
+        savekind: SaveKind = 'netcdf',
         winsize: int = 1000):
     """A drawing loop that requests data from the UDP server :func:`udp_loop`
     and plots the data in real-time.
@@ -61,7 +65,8 @@ def draw_loop(
         response (Queue): Response from UDP server: tuple of DataFrames (accel, gyro, mag, baro)
         info (Queue): Info queue from UDP server: (source: (ip, port), datetime, bitrate, byteunit, packrate, packunit)
         shutdown (Event): Signal to UDP server that the drawing loop is shutting down
-        datapath (Path): Path to store NetCDF files. Defaults to current working directory / 'data'.
+        datapath (Path, optional): Path to store NetCDF files. Defaults to current working directory / 'data'.
+        savekind (SaveKind, optional): Kind of file to save data. Defaults to 'netcdf'.
         winsize (int, optional): Window size in milliseconds for displaying data. Defaults to 1000.
     """
     # The UDP source address
@@ -106,7 +111,12 @@ def draw_loop(
 
     # First row for button, use the full width
     button_ax = fig.add_subplot(grid[0, 3:6])
-    ncfile = NcDataset(datapath, button_ax)
+    if savekind == 'excel':
+        datastor = XlsxDataset(datapath, button_ax)
+    elif savekind == 'netcdf':
+        datastor = NcDataset(datapath, button_ax)
+    else:
+        raise ValueError(f"Invalid savekind: {savekind}")
 
     # First row for legend, use the left section only
     legend_ax = fig.add_subplot(grid[START-1, 1:3])
@@ -250,7 +260,7 @@ def draw_loop(
             if df is None:
                 continue
             # Probably received the correct data, which is four dataframes
-            ncfile.update(df)
+            datastor.update(df)
             try:
                 acceldf, gyrodf, magdf, barodf = df
             except ValueError:
@@ -335,5 +345,5 @@ def draw_loop(
             plt.close('all')
             exit(0)
     shutdown.set()
-    ncfile.close()
+    datastor.close()
     print(f"[{ip}:{port}] Done receiving data")

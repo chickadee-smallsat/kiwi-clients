@@ -7,13 +7,12 @@ from threading import Thread
 from typing import Iterable, List, Optional, Tuple
 from matplotlib.axes import Axes
 from matplotlib.widgets import Button
-from netCDF4 import Dataset
-from pandas import DataFrame
+from pandas import DataFrame, ExcelWriter
 
 from storesystem import StoreSystem
 
 
-class NcDataset(StoreSystem):
+class XlsxDataset(StoreSystem):
     def __init__(self, dir: Path, axis: Axes):
         self.button = Button(axis, 'Save')
         self.button.on_clicked(self.callback)
@@ -21,7 +20,7 @@ class NcDataset(StoreSystem):
         if not self._dir.exists():
             self._dir.mkdir(parents=True, exist_ok=True)
         self.queue: Optional[Queue] = None
-        self.ncthread: Optional[NcThread] = None
+        self.ncthread: Optional[XlsxThread] = None
 
     def get_artist(self):
         return self.button
@@ -31,8 +30,8 @@ class NcDataset(StoreSystem):
         if self.queue is None:
             self.button.label.set_text('Close')
             self.queue = Queue()
-            self.ncthread = NcThread(
-                self.queue, self._dir / f"data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.nc")
+            self.ncthread = XlsxThread(
+                self.queue, self._dir / f"data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
             self.ncthread.start()
         else:
             self.button.label.set_text('Save')
@@ -55,24 +54,24 @@ class NcDataset(StoreSystem):
         if self.ncthread is not None:
             self.ncthread.join()
             self.ncthread = None
-            print("NetCDF file closed")
+            print("XLSX file closed")
         else:
-            print("No NetCDF file to close")
+            print("No XLSX file to close")
 
 
-class NcThread(Thread):
+class XlsxThread(Thread):
     def __init__(self, queue: Queue, name: Path):
         super().__init__()
         self.queue = queue
         self.fname = name
-        self.dataset: Optional[Dataset] = None
+        self.writer: Optional[ExcelWriter] = None
 
     def run(self):
         # Implement the thread's activity here
         kinds = ['accel', 'gyro', 'mag', 'baro']
-        if self.dataset is None:
-            self.dataset = Dataset(self.fname, 'w', format='NETCDF4')
-        print(f"NetCDF file {self.fname} opened")
+        if self.writer is None:
+            self.writer = ExcelWriter(self.fname, engine='openpyxl')
+        print(f"Excel file {self.fname} opened")
         while True:
             try:
                 data = self.queue.get()
@@ -80,32 +79,11 @@ class NcThread(Thread):
                 break
             for (kind, df) in zip(kinds, data):
                 df: DataFrame = df
-                update_dataset(self.dataset, df, kind)
-        self.dataset.close()
-        print(f"NetCDF file {self.fname} closed")
+                update_dataset(self.writer, df, kind)
+        self.writer.close()
+        print(f"Excel file {self.fname} closed")
 
 
-def update_dataset(ds: Dataset, df: DataFrame, id: str):
+def update_dataset(writer: ExcelWriter, df: DataFrame, id: str):
     """Update the netCDF4 Dataset with new data from the DataFrame."""
-    columns = [col for col in df.columns if col != 'tstamp']
-    if id not in ds.groups.keys():
-        print(f'\tCreating NetCDF group for ID {id}')
-        group = ds.createGroup(id)
-        group.createDimension('tstamp', None)
-        nctime = group.createVariable(
-            'tstamp', 'f8', ('tstamp',), compression='zlib')
-        for col in columns:
-            group.createVariable(
-                col, 'f4', ('tstamp',), compression='zlib')
-        nctime[:] = df['tstamp'].values  # type: ignore
-        for col in columns:
-            var = group.variables[col]
-            var[:] = df[col].values  # type: ignore
-    else:
-        group = ds.groups[id]
-        nctime = group.variables['tstamp']
-        dlen = len(nctime)
-        nctime[dlen:] = df['tstamp'].values  # type: ignore
-        for col in columns:
-            var = group.variables[col]
-            var[dlen:] = df[col].values  # type: ignore
+    df.to_excel(writer, sheet_name=id, index=False)
