@@ -1,100 +1,131 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <title>Multi-Section Accelerometer Plots</title>
-  <script src="https://cdn.plot.ly/plotly-3.1.0.min.js" charset="utf-8"></script>
-  <script src="plot.js" defer></script> <!-- Custom plotting logic -->
-  <style>
-    .section {
-      margin-bottom: 40px;
-    }
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kiwi Sensor Dashboard</title>
 
-    .section-title {
-      font-size: 1.5em;
-      margin-bottom: 10px;
-    }
+  <!-- Plotly CDN -->
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 
-    .charts-row {
-      display: flex;
-      flex-wrap: nowrap;
-      gap: 20px;
-      justify-content: space-between;
-    }
-
-    .plot {
-      flex: 1;
-      min-width: 300px;
-      height: 300px;
-    }
-  </style>
+  <!-- App styles -->
+  <link rel="stylesheet" href="/styles.css" />
 </head>
-
 <body>
-  <h1>Multi-Sensor Accelerometer Dashboard</h1>
+  <!-- Header -->
+  <header>
+    <h1>Kiwi Sensor Dashboard</h1>
+    <p>Live UDP → Rust (Actix) → SSE → Browser · Global recording · Excel export</p>
+  </header>
 
-  <!-- Section 1 -->
-  <div class="section" id="section1">
-    <div class="section-title">Accelerometer</div>
-    <div class="charts-row">
-      <div id="Accel-xyz" class="plot" data-qty="Accel"></div>
-      <div id="Accel-theta" class="plot"></div>
-      <div id="Accel-phi" class="plot"></div>
-    </div>
-  </div>
+  <main class="wrap">
+    <!-- LEFT: Plots -->
+    <section class="card">
+      <!-- Status + Controls -->
+      <div class="row space">
+        <div class="row">
+          <span class="pill" id="connPill">
+            <span class="dot" id="connDot"></span>
+            <span id="connText">connecting…</span>
+          </span>
 
-  <!-- Section 2 -->
-  <div class="section" id="section2">
-    <div class="section-title">Magnetometer</div>
-    <div class="charts-row">
-      <div id="Mag-xyz" class="plot" data-qty="Gyro"></div>
-      <div id="Mag-theta" class="plot"></div>
-      <div id="Mag-phi" class="plot"></div>
-    </div>
-  </div>
+          <span class="pill">buffer: <span id="bufCount">0</span>/<span id="bufMax">0</span></span>
+          <span class="pill">reconnects: <span id="reconnects">0</span></span>
+          <span class="pill">last seen: <span id="lastSeen">-</span></span>
+        </div>
 
-  <script>
-    window.onload = function () {
-      if (typeof initPlots === 'function') {
-        initPlots("Accel");
-        initPlots("Mag");
-      } else {
-        console.error("initPlots is not defined. Is plot.js loaded correctly?");
-      }
+        <div class="row">
+          <button id="pauseBtn" type="button">Pause</button>
+        </div>
+      </div>
 
-      let events = new EventSource("/events");
-      events.onmessage = function (event) {
-        try {
-          const measurements = JSON.parse(event.data);
-          for (const { measurement, timestamp } of measurements) {
-            if (!measurement || typeof timestamp !== 'number') {
-              console.log("Invalid measurement or timestamp");
-              continue;
-            }
-            // Extract enum variant
-            const variantNames = Object.keys(measurement);
-            if (variantNames.length !== 1) {
-              console.log('Invalid CommonMeasurement: expected exactly one variant');
-              continue;
-            }
-            const variant = variantNames[0];
-            const values = measurement[variant];
-            switch (variant) {
-              case 'Accel':
-              case 'Mag':
-                if (!Array.isArray(values) || values.length !== 3) {
-                  console.log(`${variant} must have 3 numeric values`);
-                }
-                updatePlots(variant, timestamp * 1e-6, values[0], values[1], values[2]);
-            }
-          }
-        } catch (err) {
-          console.error("Invalid data format", event.data, err);
-        }
-      };
-    };
-  </script>
+      <!-- Stream + Window Settings -->
+      <div class="controls">
+        <label>
+          Stream
+          <select id="streamSelect">
+            <option value="all">All</option>
+            <option value="accel">Accelerometer</option>
+            <option value="gyro">Gyroscope</option>
+            <option value="mag">Magnetometer</option>
+            <option value="temp">Temperature</option>
+            <option value="pressure">Pressure</option>
+          </select>
+        </label>
+
+        <label>
+          Window (sec)
+          <input id="windowSec" type="number" min="1" max="10" step="1" value="2" />
+        </label>
+
+        <label>
+          Rate (Hz)
+          <input id="rateHz" type="number" min="1" max="240" step="1" value="60" />
+        </label>
+      </div>
+
+      <!-- Accelerometer -->
+      <div class="plotWrap">
+        <label>Accelerometer (X, Y, Z, Magnitude)</label>
+        <div id="accelPlot"></div>
+      </div>
+
+      <!-- Gyroscope -->
+      <div class="plotWrap">
+        <label>Gyroscope (X, Y, Z, Magnitude)</label>
+        <div id="gyroPlot"></div>
+      </div>
+
+      <!-- Magnetometer -->
+      <div class="plotWrap">
+        <label>Magnetometer (X, Y, Z, Magnitude)</label>
+        <div id="magPlot"></div>
+      </div>
+
+      <!-- Scalar Sensors -->
+      <div class="grid2">
+        <div class="plotWrap">
+          <label>Temperature</label>
+          <div id="tempPlot"></div>
+        </div>
+
+        <div class="plotWrap">
+          <label>Pressure</label>
+          <div id="pressurePlot"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT: Dial + Recording -->
+    <section class="card">
+      <label class="subLabel">Direction Dial (XY Projection)</label>
+      <div id="dial"></div>
+
+      <div class="btnRow">
+        <button id="recordBtn" type="button">Start Recording</button>
+        <button id="stopBtn" type="button" disabled>Stop</button>
+        <button id="exportBtn" type="button" disabled>Export Excel</button>
+      </div>
+
+      <div class="kvs">
+        <div class="kv"><span>time</span><span class="mono" id="t">-</span></div>
+        <div class="kv"><span>x</span><span class="mono" id="x">-</span></div>
+        <div class="kv"><span>y</span><span class="mono" id="y">-</span></div>
+        <div class="kv"><span>z</span><span class="mono" id="z">-</span></div>
+        <div class="kv"><span>magnitude</span><span class="mono" id="mag">-</span></div>
+        <div class="kv"><span>theta (deg)</span><span class="mono" id="theta">-</span></div>
+        <div class="kv"><span>phi (deg)</span><span class="mono" id="phi">-</span></div>
+        <div class="kv"><span>recorded samples</span><span class="mono" id="recCount">0</span></div>
+      </div>
+
+      <p class="small">
+        Recording is global. Excel export creates one sheet per sensor:
+        <span class="mono">Accel, Gyro, Mag, Temp, Pressure</span>
+      </p>
+    </section>
+  </main>
+
+  <!-- App logic -->
+  <script src="/plot.js"></script>
 </body>
-
 </html>
