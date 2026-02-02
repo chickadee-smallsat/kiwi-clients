@@ -4,42 +4,32 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kiwi Sensor Dashboard</title>
-
-  <!-- Plotly CDN -->
   <script src="./plotly-2.27.0.min.js"></script>
-
-  <!-- App styles -->
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <!-- Header -->
   <header>
     <h1>Kiwi Sensor Dashboard</h1>
     <p>Live UDP → Rust (Actix) → SSE → Browser · Global recording · Excel export</p>
   </header>
 
   <main class="wrap">
-    <!-- LEFT: Plots -->
     <section class="card">
-      <!-- Status + Controls -->
       <div class="row space">
         <div class="row">
           <span class="pill" id="connPill">
             <span class="dot" id="connDot"></span>
             <span id="connText">connecting…</span>
           </span>
-
           <span class="pill">buffer: <span id="bufCount">0</span>/<span id="bufMax">0</span></span>
           <span class="pill">reconnects: <span id="reconnects">0</span></span>
           <span class="pill">last seen: <span id="lastSeen">-</span></span>
         </div>
-
         <div class="row">
           <button id="pauseBtn" type="button">Pause</button>
         </div>
       </div>
 
-      <!-- Stream + Window Settings -->
       <div class="controls">
         <label>
           Stream
@@ -50,6 +40,7 @@
             <option value="mag">Magnetometer</option>
             <option value="temp">Temperature</option>
             <option value="pressure">Pressure</option>
+            <option value="altitude">Altitude</option>
           </select>
         </label>
 
@@ -64,25 +55,21 @@
         </label>
       </div>
 
-      <!-- Accelerometer -->
       <div class="plotWrap">
         <label>Accelerometer (X, Y, Z, Magnitude)</label>
         <div id="accelPlot"></div>
       </div>
 
-      <!-- Gyroscope -->
       <div class="plotWrap">
         <label>Gyroscope (X, Y, Z, Magnitude)</label>
         <div id="gyroPlot"></div>
       </div>
 
-      <!-- Magnetometer -->
       <div class="plotWrap">
         <label>Magnetometer (X, Y, Z, Magnitude)</label>
         <div id="magPlot"></div>
       </div>
 
-      <!-- Scalar Sensors -->
       <div class="grid2">
         <div class="plotWrap">
           <label>Temperature</label>
@@ -93,10 +80,14 @@
           <label>Pressure</label>
           <div id="pressurePlot"></div>
         </div>
+
+        <div class="plotWrap">
+          <label>Altitude</label>
+          <div id="altitudePlot"></div>
+        </div>
       </div>
     </section>
 
-    <!-- RIGHT: Dial + Recording -->
     <section class="card">
       <label class="subLabel">Direction Dial (XY Projection)</label>
       <div id="dial"></div>
@@ -120,12 +111,11 @@
 
       <p class="small">
         Recording is global. Excel export creates one sheet per sensor:
-        <span class="mono">Accel, Gyro, Mag, Temp, Pressure</span>
+        <span class="mono">Accel, Gyro, Mag, Temp, Pressure, Altitude</span>
       </p>
     </section>
   </main>
 
-  <!-- App logic -->
   <script src="/plot.js"></script>
 </body>
 </html>
