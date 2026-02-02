@@ -25,7 +25,6 @@
   const thetaEl = document.getElementById('theta');
   const phiEl = document.getElementById('phi');
 
-<<<<<<< HEAD
   const accelDiv = document.getElementById("accelPlot");
   const gyroDiv = document.getElementById("gyroPlot");
   const magDiv = document.getElementById("magPlot");
@@ -33,14 +32,6 @@
   const pressureDiv = document.getElementById("pressurePlot");
   const altitudeDiv = document.getElementById("altitudePlot");
   const dialDiv = document.getElementById("dial");
-=======
-  const accelDiv = document.getElementById('accelPlot');
-  const gyroDiv = document.getElementById('gyroPlot');
-  const magDiv = document.getElementById('magPlot');
-  const tempDiv = document.getElementById('tempPlot');
-  const pressureDiv = document.getElementById('pressurePlot');
-  const dialDiv = document.getElementById('dial');
->>>>>>> 6a679d62d48ef99258b029ca8c23559e72e4ade2
 
   let paused = false;
   let reconnects = 0;
@@ -56,15 +47,11 @@
     rows: [],
   };
 
-<<<<<<< HEAD
   let uiStream = streamSelect ? streamSelect.value : "all";
-=======
-  let latestVectorSample = null;
-  let uiStream = streamSelect ? streamSelect.value : 'all';
->>>>>>> 6a679d62d48ef99258b029ca8c23559e72e4ade2
 
   const FRAME_MS = 50;
   let pending = [];
+  let lastFrameMs = 0;
 
   function toInt(v, fallback) {
     const n = Number(v);
@@ -124,7 +111,7 @@
     const phi = toDeg(Math.atan2(y, x));
     const rho = Math.sqrt(x * x + y * y);
     const theta = toDeg(Math.atan2(rho, z));
-    return {phi_deg: phi, theta_deg: theta};
+    return { phi_deg: phi, theta_deg: theta };
   }
 
   function safeNum(v) {
@@ -171,7 +158,6 @@
     if (type === "pressure") {
       const value = safeNum(raw.value);
       if (value === null) return null;
-<<<<<<< HEAD
       return { sensor: "pressure", ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
     }
 
@@ -179,27 +165,13 @@
       const value = safeNum(raw.value);
       if (value === null) return null;
       return { sensor: "altitude", ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
-=======
-      return {
-        sensor: 'pressure',
-        ts_ms,
-        x: null,
-        y: null,
-        z: null,
-        mag: null,
-        theta_deg: null,
-        phi_deg: null,
-        value,
-      };
->>>>>>> 6a679d62d48ef99258b029ca8c23559e72e4ade2
     }
 
     return null;
   }
 
   function unpackSerde(raw) {
-    if (!raw || !raw.measurement || typeof raw.timestamp !== 'number')
-      return null;
+    if (!raw || !raw.measurement || typeof raw.timestamp !== 'number') return null;
 
     const keys = Object.keys(raw.measurement);
     if (keys.length !== 1) {
@@ -228,11 +200,6 @@
         { sensor: "altitude", value: values[2], ts },
       ];
     }
-<<<<<<< HEAD
-
-=======
-    console.log('Unknown sensor type:', sensor);
->>>>>>> 6a679d62d48ef99258b029ca8c23559e72e4ade2
     return null;
   }
 
@@ -257,23 +224,23 @@
   }, 500);
 
   const baseLayout = {
-    margin: {l: 40, r: 10, t: 10, b: 30},
+    margin: { l: 40, r: 10, t: 10, b: 30 },
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
-    xaxis: {title: '', showgrid: true, zeroline: false},
-    yaxis: {title: '', showgrid: true, zeroline: false},
+    xaxis: { title: '', showgrid: true, zeroline: false },
+    yaxis: { title: '', showgrid: true, zeroline: false },
     showlegend: true,
-    legend: {orientation: 'h'},
+    legend: { orientation: 'h' },
   };
 
-  const config = {displayModeBar: false, responsive: true};
+  const config = { displayModeBar: false, responsive: true };
 
   function initVectorPlot(div, title) {
     const traces = [
-      {name: 'x', mode: 'lines', x: [], y: []},
-      {name: 'y', mode: 'lines', x: [], y: []},
-      {name: 'z', mode: 'lines', x: [], y: []},
-      {name: 'mag', mode: 'lines', x: [], y: []},
+      { name: 'x', mode: 'lines', x: [], y: [] },
+      { name: 'y', mode: 'lines', x: [], y: [] },
+      { name: 'z', mode: 'lines', x: [], y: [] },
+      { name: 'mag', mode: 'lines', x: [], y: [] },
     ];
     const layout = structuredClone(baseLayout);
     layout.yaxis.title = title;
@@ -281,25 +248,20 @@
   }
 
   function initScalarPlot(div, title) {
-    const traces = [{name: 'value', mode: 'lines', x: [], y: []}];
+    const traces = [{ name: 'value', mode: 'lines', x: [], y: [] }];
     const layout = structuredClone(baseLayout);
     layout.yaxis.title = title;
     Plotly.newPlot(div, traces, layout, config);
   }
 
   function initDial() {
-    const traces = [{name: 'dir', mode: 'lines+markers', x: [0, 1], y: [0, 0]}];
+    const traces = [{ name: 'dir', mode: 'lines+markers', x: [0, 1], y: [0, 0] }];
     const layout = {
-      margin: {l: 20, r: 20, t: 10, b: 20},
+      margin: { l: 20, r: 20, t: 10, b: 20 },
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor: 'rgba(0,0,0,0)',
-      xaxis: {
-        range: [-1.2, 1.2],
-        showgrid: true,
-        zeroline: true,
-        scaleanchor: 'y'
-      },
-      yaxis: {range: [-1.2, 1.2], showgrid: true, zeroline: true},
+      xaxis: { range: [-1.2, 1.2], showgrid: true, zeroline: true, scaleanchor: 'y' },
+      yaxis: { range: [-1.2, 1.2], showgrid: true, zeroline: true },
       showlegend: false,
     };
     Plotly.newPlot(dialDiv, traces, layout, config);
@@ -307,19 +269,22 @@
 
   function extendVector(div, ts, x, y, z, mag) {
     Plotly.extendTraces(
-        div, {x: [[ts], [ts], [ts], [ts]], y: [[x], [y], [z], [mag]]},
-        [0, 1, 2, 3], maxPoints);
+      div,
+      { x: [[ts], [ts], [ts], [ts]], y: [[x], [y], [z], [mag]] },
+      [0, 1, 2, 3],
+      maxPoints
+    );
   }
 
   function extendScalar(div, ts, v) {
-    Plotly.extendTraces(div, {x: [[ts]], y: [[v]]}, [0], maxPoints);
+    Plotly.extendTraces(div, { x: [[ts]], y: [[v]] }, [0], maxPoints);
   }
 
   function renderDial(phi_deg) {
     const a = (phi_deg - 90) * (Math.PI / 180);
     const x = Math.cos(a);
     const y = Math.sin(a);
-    Plotly.restyle(dialDiv, {x: [[0, x]], y: [[0, y]]}, [0]);
+    Plotly.restyle(dialDiv, { x: [[0, x]], y: [[0, y]] }, [0]);
   }
 
   initVectorPlot(accelDiv, "accel");
@@ -367,20 +332,12 @@
   }
 
   function handleItem(item) {
-    bufferedPoints += 1;
-    bufCountEl.textContent = String(Math.min(bufferedPoints, maxPoints));
+    bufferedPoints = Math.min(bufferedPoints + 1, maxPoints);
+    bufCountEl.textContent = String(bufferedPoints);
 
-    if (recorder.isRecording) {
-      recordRow(item);
-      updateRecorderUI();
-    }
-
-    if (isVectorSensor(item.sensor)) {
-      updateValuePanel(item);
-      renderDial(item.phi_deg);
-    }
-
+    if (recorder.isRecording) recordRow(item);
     if (paused) return;
+
     const ts = item.ts_ms;
 
     if (item.sensor === 'accel' && shouldDraw('accel')) {
@@ -398,25 +355,18 @@
     }
   }
 
-  setInterval(() => {
-    if (!pending.length) return;
-    const batch = pending;
-    pending = [];
-    for (const item of batch) handleItem(item);
-    setConn('ok', 'connected');
-    updateLastSeen();
-  }, FRAME_MS);
-
   applySettings();
   updateRecorderUI();
 
   windowInput.addEventListener('change', () => {
     applySettings();
+    bufferedPoints = 0;
     setConn('ok', 'connected');
   });
 
   rateInput.addEventListener('change', () => {
     applySettings();
+    bufferedPoints = 0;
     setConn('ok', 'connected');
   });
 
@@ -461,19 +411,8 @@
       const rows = recorder.rows.filter(r => r.sensor === s);
       const shaped = rows.map(r =>
         isVectorSensor(s)
-          ? {
-              ts_ms: r.ts_ms,
-              x: r.x,
-              y: r.y,
-              z: r.z,
-              mag: r.mag,
-              theta_deg: r.theta_deg,
-              phi_deg: r.phi_deg,
-            }
-          : {
-              ts_ms: r.ts_ms,
-              value: r.value,
-            }
+          ? { ts_ms: r.ts_ms, x: r.x, y: r.y, z: r.z, mag: r.mag, theta_deg: r.theta_deg, phi_deg: r.phi_deg }
+          : { ts_ms: r.ts_ms, value: r.value }
       );
       const ws = XLSX.utils.json_to_sheet(shaped);
       XLSX.utils.book_append_sheet(wb, ws, s.toUpperCase());
@@ -494,6 +433,12 @@
     setConn("ok", "connected");
   };
 
+  const MAX_PENDING = 20000; // bounds queued SSE samples so the UI can't run out of memory if data arrives faster than we can render
+  function enqueue(item) {
+    pending.push(item);
+    if (pending.length > MAX_PENDING) pending.splice(0, pending.length - MAX_PENDING);
+  }
+
   es.onmessage = (e) => {
     let parsed;
     try {
@@ -510,7 +455,7 @@
       const list = Array.isArray(unpacked) ? unpacked : [unpacked];
       for (const u of list) {
         const item = normalizeItem(u);
-        if (item) pending.push(item);
+        if (item) enqueue(item);
       }
     }
   };
@@ -520,4 +465,35 @@
     reconnectsEl.textContent = String(reconnects);
     setConn('bad', 'disconnected (auto-retrying…)');
   };
+
+  function frame(now) {
+    if (now - lastFrameMs >= FRAME_MS) {
+      lastFrameMs = now;
+
+      if (pending.length) {
+        const maxItemsThisFrame = Math.max(1, Math.round(rateHz * (FRAME_MS / 1000) * 3));
+        const batch = pending.splice(0, maxItemsThisFrame);
+
+        let lastVector = null;
+        for (const item of batch) {
+          if (isVectorSensor(item.sensor)) lastVector = item;
+          handleItem(item);
+        }
+
+        if (lastVector) {
+          updateValuePanel(lastVector);
+          renderDial(lastVector.phi_deg);
+        }
+
+        if (recorder.isRecording && batch.length) updateRecorderUI();
+
+        setConn('ok', 'connected');
+        updateLastSeen();
+      }
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
 })();
