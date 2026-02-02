@@ -30,6 +30,7 @@
   const magDiv = document.getElementById("magPlot");
   const tempDiv = document.getElementById("tempPlot");
   const pressureDiv = document.getElementById("pressurePlot");
+  const altitudeDiv = document.getElementById("altitudePlot");
   const dialDiv = document.getElementById("dial");
 
   let paused = false;
@@ -46,7 +47,6 @@
     rows: [],
   };
 
-  let latestVectorSample = null;
   let uiStream = streamSelect ? streamSelect.value : "all";
 
   const FRAME_MS = 50;
@@ -81,9 +81,7 @@
   }
 
   function getCss(varName) {
-    return getComputedStyle(document.documentElement)
-      .getPropertyValue(varName)
-      .trim();
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
   }
 
   function fmtTime(ms) {
@@ -150,20 +148,22 @@
       };
     }
 
+    if (type === "temp") {
+      const value = safeNum(raw.value);
+      if (value === null) return null;
+      return { sensor: "temp", ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
+    }
+
     if (type === "pressure") {
       const value = safeNum(raw.value);
       if (value === null) return null;
-      return {
-        sensor: "pressure",
-        ts_ms,
-        x: null,
-        y: null,
-        z: null,
-        mag: null,
-        theta_deg: null,
-        phi_deg: null,
-        value,
-      };
+      return { sensor: "pressure", ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
+    }
+
+    if (type === "altitude") {
+      const value = safeNum(raw.value);
+      if (value === null) return null;
+      return { sensor: "altitude", ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
     }
 
     return null;
@@ -177,30 +177,26 @@
 
     const variant = keys[0];
     const values = raw.measurement[variant];
-    const sensor = variant.toLowerCase();
+    const ts = raw.timestamp;
 
-    if (
-      (sensor === "accel" || sensor === "gyro" || sensor === "mag") &&
-      Array.isArray(values) &&
-      values.length === 3
-    ) {
+    if (Array.isArray(values) && values.length === 3 && variant !== "Baro") {
       return {
-        sensor,
+        sensor: variant.toLowerCase(),
         x: values[0],
         y: values[1],
         z: values[2],
-        ts: raw.timestamp,
+        ts,
       };
     }
 
-    if (sensor === "baro" && Array.isArray(values) && values.length === 3) {
-      return {
-        sensor: "pressure",
-        value: values[1],
-        ts: raw.timestamp,
-      };
+    if (variant === "Baro" && Array.isArray(values) && values.length === 3) {
+      return [
+        { sensor: "temp", value: values[0], ts },
+        { sensor: "pressure", value: values[1], ts },
+        { sensor: "altitude", value: values[2], ts },
+      ];
     }
-    console.log("Unknown sensor type:", type);
+
     return null;
   }
 
@@ -291,7 +287,9 @@
   initVectorPlot(accelDiv, "accel");
   initVectorPlot(gyroDiv, "gyro");
   initVectorPlot(magDiv, "mag");
+  initScalarPlot(tempDiv, "temp");
   initScalarPlot(pressureDiv, "pressure");
+  initScalarPlot(altitudeDiv, "altitude");
   initDial();
 
   function updateRecorderUI() {
@@ -340,7 +338,6 @@
     }
 
     if (isVectorSensor(item.sensor)) {
-      latestVectorSample = item;
       updateValuePanel(item);
       renderDial(item.phi_deg);
     }
@@ -354,8 +351,12 @@
       extendVector(gyroDiv, ts, item.x, item.y, item.z, item.mag);
     } else if (item.sensor === "mag" && shouldDraw("mag")) {
       extendVector(magDiv, ts, item.x, item.y, item.z, item.mag);
+    } else if (item.sensor === "temp" && shouldDraw("temp")) {
+      extendScalar(tempDiv, ts, item.value);
     } else if (item.sensor === "pressure" && shouldDraw("pressure")) {
       extendScalar(pressureDiv, ts, item.value);
+    } else if (item.sensor === "altitude" && shouldDraw("altitude")) {
+      extendScalar(altitudeDiv, ts, item.value);
     }
   }
 
@@ -403,6 +404,46 @@
     updateRecorderUI();
   });
 
+  exportBtn.addEventListener("click", async () => {
+    if (!recorder.rows.length) return;
+    if (!window.XLSX) {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+      await new Promise((r, j) => {
+        s.onload = r;
+        s.onerror = j;
+        document.head.appendChild(s);
+      });
+    }
+
+    const wb = XLSX.utils.book_new();
+    const sensors = ["accel", "gyro", "mag", "temp", "pressure", "altitude"];
+
+    for (const s of sensors) {
+      const rows = recorder.rows.filter(r => r.sensor === s);
+      const shaped = rows.map(r =>
+        isVectorSensor(s)
+          ? {
+              ts_ms: r.ts_ms,
+              x: r.x,
+              y: r.y,
+              z: r.z,
+              mag: r.mag,
+              theta_deg: r.theta_deg,
+              phi_deg: r.phi_deg,
+            }
+          : {
+              ts_ms: r.ts_ms,
+              value: r.value,
+            }
+      );
+      const ws = XLSX.utils.json_to_sheet(shaped);
+      XLSX.utils.book_append_sheet(wb, ws, s.toUpperCase());
+    }
+
+    XLSX.writeFile(wb, "kiwi_recording.xlsx");
+  });
+
   setConn("warn", "connecting…");
   reconnectsEl.textContent = "0";
   lastSeenEl.textContent = "-";
@@ -412,19 +453,14 @@
   const es = new EventSource("/events");
 
   es.onopen = () => {
-    console.log("SSE connected");
     setConn("ok", "connected");
   };
 
   es.onmessage = (e) => {
     let parsed;
     try {
-      /*
-        data: [{"measurement":{"Gyro":[-0.24088828,-0.066879265,0.0]},"timestamp":232715507},{"measurement":{"Mag":[-526.0639,-255.0,-79.647964]},"timestamp":232715507},{"measurement":{"Baro":[24.819702,1000.097,1165.5216]},"timestamp":232715507},{"measurement":{"Accel":[-0.5336549,0.5843661,-0.11799745]},"timestamp":232735571},{"measurement":{"Gyro":[-0.23912565,-0.07293094,0.0]},"timestamp":232735571},{"measurement":{"Mag":[-513.9635,-276.37805,-87.01168]},"timestamp":232735571},{"measurement":{"Baro":[24.802967,1000.19226,1167.2623]},"timestamp":232735571},{"measurement":{"Accel":[-0.56830263,0.5485306,-0.12796712]},"timestamp":232755634},{"measurement":{"Gyro":[-0.23721115,-0.07893584,0.0]},"timestamp":232755634},{"measurement":{"Mag":[-500.91873,-297.1419,-94.36114]},"timestamp":232755634},{"measurement":{"Baro":[24.78625,1000.28796,1169.0231]},"timestamp":232755634},{"measurement":{"Accel":[-0.6004555,0.51058745,-0.13791412]},"timestamp":232775690},{"measurement":{"Gyro":[-0.23514658,-0.08488868,0.0]},"timestamp":232775690},{"measurement":{"Mag":[-486.9657,-317.24207,-101.69336]},"timestamp":232775690},{"measurement":{"Baro":[24.76955,1000.3842,1170.8031]},"timestamp":232775690},{"measurement":{"Accel":[-0.63000137,0.47068822,-0.1478436]},"timestamp":232795754},{"measurement":{"Gyro":[-0.23293184,-0.09078966,0.0]},"timestamp":232795754},{"measurement":{"Mag":[-472.12976,-336.6489,-109.01207]},"timestamp":232795754},{"measurement":{"Baro":[24.752863,1000.48096,1172.6035]},"timestamp":232795754},{"measurement":{"Accel":[-0.65681255,0.4290238,-0.15775234]},"timestamp":232815821}]
-      */
       parsed = JSON.parse(e.data);
     } catch {
-      console.log("Failed to parse SSE data:", e.data);
       return;
     }
 
@@ -433,9 +469,11 @@
     for (const raw of items) {
       const unpacked = unpackSerde(raw);
       if (!unpacked) continue;
-      const item = normalizeItem(unpacked);
-      if (!item) continue;
-      pending.push(item);
+      const list = Array.isArray(unpacked) ? unpacked : [unpacked];
+      for (const u of list) {
+        const item = normalizeItem(u);
+        if (item) pending.push(item);
+      }
     }
   };
 
