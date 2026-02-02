@@ -1,36 +1,36 @@
 (() => {
-  const connPill = document.getElementById("connPill");
-  const connDot = document.getElementById("connDot");
-  const connText = document.getElementById("connText");
-  const reconnectsEl = document.getElementById("reconnects");
-  const lastSeenEl = document.getElementById("lastSeen");
-  const bufCountEl = document.getElementById("bufCount");
-  const bufMaxEl = document.getElementById("bufMax");
+  const connPill = document.getElementById('connPill');
+  const connDot = document.getElementById('connDot');
+  const connText = document.getElementById('connText');
+  const reconnectsEl = document.getElementById('reconnects');
+  const lastSeenEl = document.getElementById('lastSeen');
+  const bufCountEl = document.getElementById('bufCount');
+  const bufMaxEl = document.getElementById('bufMax');
 
-  const pauseBtn = document.getElementById("pauseBtn");
-  const windowInput = document.getElementById("windowSec");
-  const rateInput = document.getElementById("rateHz");
-  const streamSelect = document.getElementById("streamSelect");
+  const pauseBtn = document.getElementById('pauseBtn');
+  const windowInput = document.getElementById('windowSec');
+  const rateInput = document.getElementById('rateHz');
+  const streamSelect = document.getElementById('streamSelect');
 
-  const recordBtn = document.getElementById("recordBtn");
-  const stopBtn = document.getElementById("stopBtn");
-  const exportBtn = document.getElementById("exportBtn");
-  const recCountEl = document.getElementById("recCount");
+  const recordBtn = document.getElementById('recordBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const recCountEl = document.getElementById('recCount');
 
-  const tEl = document.getElementById("t");
-  const xEl = document.getElementById("x");
-  const yEl = document.getElementById("y");
-  const zEl = document.getElementById("z");
-  const magEl = document.getElementById("mag");
-  const thetaEl = document.getElementById("theta");
-  const phiEl = document.getElementById("phi");
+  const tEl = document.getElementById('t');
+  const xEl = document.getElementById('x');
+  const yEl = document.getElementById('y');
+  const zEl = document.getElementById('z');
+  const magEl = document.getElementById('mag');
+  const thetaEl = document.getElementById('theta');
+  const phiEl = document.getElementById('phi');
 
-  const accelDiv = document.getElementById("accelPlot");
-  const gyroDiv = document.getElementById("gyroPlot");
-  const magDiv = document.getElementById("magPlot");
-  const tempDiv = document.getElementById("tempPlot");
-  const pressureDiv = document.getElementById("pressurePlot");
-  const dialDiv = document.getElementById("dial");
+  const accelDiv = document.getElementById('accelPlot');
+  const gyroDiv = document.getElementById('gyroPlot');
+  const magDiv = document.getElementById('magPlot');
+  const tempDiv = document.getElementById('tempPlot');
+  const pressureDiv = document.getElementById('pressurePlot');
+  const dialDiv = document.getElementById('dial');
 
   let paused = false;
   let reconnects = 0;
@@ -47,7 +47,7 @@
   };
 
   let latestVectorSample = null;
-  let uiStream = streamSelect ? streamSelect.value : "all";
+  let uiStream = streamSelect ? streamSelect.value : 'all';
 
   const FRAME_MS = 50;
   let pending = [];
@@ -59,25 +59,25 @@
 
   function setConn(state, text) {
     connText.textContent = text;
-    const ok = getCss("--ok");
-    const warn = getCss("--warn");
-    const bad = getCss("--bad");
+    const ok = getCss('--ok');
+    const warn = getCss('--warn');
+    const bad = getCss('--bad');
 
-    if (state === "ok") {
+    if (state === 'ok') {
       connDot.style.background = ok;
       connPill.style.borderColor = ok;
-      connText.style.color = "#bfffe2";
+      connText.style.color = '#bfffe2';
       return;
     }
-    if (state === "warn") {
+    if (state === 'warn') {
       connDot.style.background = warn;
       connPill.style.borderColor = warn;
-      connText.style.color = "#ffe6a8";
+      connText.style.color = '#ffe6a8';
       return;
     }
     connDot.style.background = bad;
     connPill.style.borderColor = bad;
-    connText.style.color = "#ffb8c0";
+    connText.style.color = '#ffb8c0';
   }
 
   function getCss(varName) {
@@ -87,7 +87,7 @@
   }
 
   function fmtTime(ms) {
-    if (!ms) return "-";
+    if (!ms) return '-';
     return new Date(ms).toLocaleTimeString();
   }
 
@@ -112,7 +112,7 @@
     const phi = toDeg(Math.atan2(y, x));
     const rho = Math.sqrt(x * x + y * y);
     const theta = toDeg(Math.atan2(rho, z));
-    return { phi_deg: phi, theta_deg: theta };
+    return {phi_deg: phi, theta_deg: theta};
   }
 
   function safeNum(v) {
@@ -121,11 +121,11 @@
   }
 
   function isVectorSensor(s) {
-    return s === "accel" || s === "gyro" || s === "mag";
+    return s === 'accel' || s === 'gyro' || s === 'mag';
   }
 
   function normalizeItem(raw) {
-    const type = (raw.sensor ?? "").toString().toLowerCase();
+    const type = (raw.sensor ?? '').toString().toLowerCase();
     const ts_ms = normalizeTimestampToMs(raw.ts);
 
     if (isVectorSensor(type)) {
@@ -154,7 +154,7 @@
       const value = safeNum(raw.value);
       if (value === null) return null;
       return {
-        sensor: "pressure",
+        sensor: 'pressure',
         ts_ms,
         x: null,
         y: null,
@@ -170,10 +170,14 @@
   }
 
   function unpackSerde(raw) {
-    if (!raw || !raw.measurement || typeof raw.timestamp !== "number") return null;
+    if (!raw || !raw.measurement || typeof raw.timestamp !== 'number')
+      return null;
 
     const keys = Object.keys(raw.measurement);
-    if (keys.length !== 1) return null;
+    if (keys.length !== 1) {
+      console.log('Unexpected measurement format:', raw);
+      return null;
+    }
 
     const variant = keys[0];
     const values = raw.measurement[variant];
@@ -200,7 +204,7 @@
         ts: raw.timestamp,
       };
     }
-    console.log("Unknown sensor type:", type);
+    console.log('Unknown sensor type:', sensor);
     return null;
   }
 
@@ -221,27 +225,27 @@
   setInterval(() => {
     if (!lastSeenMs) return;
     const age = Date.now() - lastSeenMs;
-    if (age > 2000) setConn("warn", "connected (stale…)");
+    if (age > 2000) setConn('warn', 'connected (stale…)');
   }, 500);
 
   const baseLayout = {
-    margin: { l: 40, r: 10, t: 10, b: 30 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "rgba(0,0,0,0)",
-    xaxis: { title: "", showgrid: true, zeroline: false },
-    yaxis: { title: "", showgrid: true, zeroline: false },
+    margin: {l: 40, r: 10, t: 10, b: 30},
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: 'rgba(0,0,0,0)',
+    xaxis: {title: '', showgrid: true, zeroline: false},
+    yaxis: {title: '', showgrid: true, zeroline: false},
     showlegend: true,
-    legend: { orientation: "h" },
+    legend: {orientation: 'h'},
   };
 
-  const config = { displayModeBar: false, responsive: true };
+  const config = {displayModeBar: false, responsive: true};
 
   function initVectorPlot(div, title) {
     const traces = [
-      { name: "x", mode: "lines", x: [], y: [] },
-      { name: "y", mode: "lines", x: [], y: [] },
-      { name: "z", mode: "lines", x: [], y: [] },
-      { name: "mag", mode: "lines", x: [], y: [] },
+      {name: 'x', mode: 'lines', x: [], y: []},
+      {name: 'y', mode: 'lines', x: [], y: []},
+      {name: 'z', mode: 'lines', x: [], y: []},
+      {name: 'mag', mode: 'lines', x: [], y: []},
     ];
     const layout = structuredClone(baseLayout);
     layout.yaxis.title = title;
@@ -249,20 +253,25 @@
   }
 
   function initScalarPlot(div, title) {
-    const traces = [{ name: "value", mode: "lines", x: [], y: [] }];
+    const traces = [{name: 'value', mode: 'lines', x: [], y: []}];
     const layout = structuredClone(baseLayout);
     layout.yaxis.title = title;
     Plotly.newPlot(div, traces, layout, config);
   }
 
   function initDial() {
-    const traces = [{ name: "dir", mode: "lines+markers", x: [0, 1], y: [0, 0] }];
+    const traces = [{name: 'dir', mode: 'lines+markers', x: [0, 1], y: [0, 0]}];
     const layout = {
-      margin: { l: 20, r: 20, t: 10, b: 20 },
-      paper_bgcolor: "rgba(0,0,0,0)",
-      plot_bgcolor: "rgba(0,0,0,0)",
-      xaxis: { range: [-1.2, 1.2], showgrid: true, zeroline: true, scaleanchor: "y" },
-      yaxis: { range: [-1.2, 1.2], showgrid: true, zeroline: true },
+      margin: {l: 20, r: 20, t: 10, b: 20},
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      xaxis: {
+        range: [-1.2, 1.2],
+        showgrid: true,
+        zeroline: true,
+        scaleanchor: 'y'
+      },
+      yaxis: {range: [-1.2, 1.2], showgrid: true, zeroline: true},
       showlegend: false,
     };
     Plotly.newPlot(dialDiv, traces, layout, config);
@@ -270,22 +279,19 @@
 
   function extendVector(div, ts, x, y, z, mag) {
     Plotly.extendTraces(
-      div,
-      { x: [[ts], [ts], [ts], [ts]], y: [[x], [y], [z], [mag]] },
-      [0, 1, 2, 3],
-      maxPoints
-    );
+        div, {x: [[ts], [ts], [ts], [ts]], y: [[x], [y], [z], [mag]]},
+        [0, 1, 2, 3], maxPoints);
   }
 
   function extendScalar(div, ts, v) {
-    Plotly.extendTraces(div, { x: [[ts]], y: [[v]] }, [0], maxPoints);
+    Plotly.extendTraces(div, {x: [[ts]], y: [[v]]}, [0], maxPoints);
   }
 
   function renderDial(phi_deg) {
     const a = (phi_deg - 90) * (Math.PI / 180);
     const x = Math.cos(a);
     const y = Math.sin(a);
-    Plotly.restyle(dialDiv, { x: [[0, x]], y: [[0, y]] }, [0]);
+    Plotly.restyle(dialDiv, {x: [[0, x]], y: [[0, y]]}, [0]);
   }
 
   initVectorPlot(accelDiv, "accel");
@@ -316,7 +322,7 @@
   }
 
   function shouldDraw(sensor) {
-    return uiStream === "all" || uiStream === sensor;
+    return uiStream === 'all' || uiStream === sensor;
   }
 
   function updateValuePanel(item) {
@@ -348,11 +354,11 @@
     if (paused) return;
     const ts = item.ts_ms;
 
-    if (item.sensor === "accel" && shouldDraw("accel")) {
+    if (item.sensor === 'accel' && shouldDraw('accel')) {
       extendVector(accelDiv, ts, item.x, item.y, item.z, item.mag);
-    } else if (item.sensor === "gyro" && shouldDraw("gyro")) {
+    } else if (item.sensor === 'gyro' && shouldDraw('gyro')) {
       extendVector(gyroDiv, ts, item.x, item.y, item.z, item.mag);
-    } else if (item.sensor === "mag" && shouldDraw("mag")) {
+    } else if (item.sensor === 'mag' && shouldDraw('mag')) {
       extendVector(magDiv, ts, item.x, item.y, item.z, item.mag);
     } else if (item.sensor === "pressure" && shouldDraw("pressure")) {
       extendScalar(pressureDiv, ts, item.value);
@@ -364,41 +370,41 @@
     const batch = pending;
     pending = [];
     for (const item of batch) handleItem(item);
-    setConn("ok", "connected");
+    setConn('ok', 'connected');
     updateLastSeen();
   }, FRAME_MS);
 
   applySettings();
   updateRecorderUI();
 
-  windowInput.addEventListener("change", () => {
+  windowInput.addEventListener('change', () => {
     applySettings();
-    setConn("ok", "connected");
+    setConn('ok', 'connected');
   });
 
-  rateInput.addEventListener("change", () => {
+  rateInput.addEventListener('change', () => {
     applySettings();
-    setConn("ok", "connected");
+    setConn('ok', 'connected');
   });
 
   if (streamSelect) {
-    streamSelect.addEventListener("change", () => {
+    streamSelect.addEventListener('change', () => {
       uiStream = streamSelect.value;
     });
   }
 
-  pauseBtn.addEventListener("click", () => {
+  pauseBtn.addEventListener('click', () => {
     paused = !paused;
-    pauseBtn.textContent = paused ? "Resume" : "Pause";
+    pauseBtn.textContent = paused ? 'Resume' : 'Pause';
   });
 
-  recordBtn.addEventListener("click", () => {
+  recordBtn.addEventListener('click', () => {
     recorder.isRecording = true;
     recorder.rows.length = 0;
     updateRecorderUI();
   });
 
-  stopBtn.addEventListener("click", () => {
+  stopBtn.addEventListener('click', () => {
     recorder.isRecording = false;
     updateRecorderUI();
   });
@@ -407,24 +413,25 @@
   reconnectsEl.textContent = "0";
   lastSeenEl.textContent = "-";
   bufMaxEl.textContent = String(maxPoints);
-  bufCountEl.textContent = "0";
+  bufCountEl.textContent = '0';
 
-  const es = new EventSource("/events");
+  const es = new EventSource('/events');
 
   es.onopen = () => {
-    console.log("SSE connected");
-    setConn("ok", "connected");
+    console.log('SSE connected');
+    setConn('ok', 'connected');
   };
 
   es.onmessage = (e) => {
     let parsed;
     try {
       /*
-        data: [{"measurement":{"Gyro":[-0.24088828,-0.066879265,0.0]},"timestamp":232715507},{"measurement":{"Mag":[-526.0639,-255.0,-79.647964]},"timestamp":232715507},{"measurement":{"Baro":[24.819702,1000.097,1165.5216]},"timestamp":232715507},{"measurement":{"Accel":[-0.5336549,0.5843661,-0.11799745]},"timestamp":232735571},{"measurement":{"Gyro":[-0.23912565,-0.07293094,0.0]},"timestamp":232735571},{"measurement":{"Mag":[-513.9635,-276.37805,-87.01168]},"timestamp":232735571},{"measurement":{"Baro":[24.802967,1000.19226,1167.2623]},"timestamp":232735571},{"measurement":{"Accel":[-0.56830263,0.5485306,-0.12796712]},"timestamp":232755634},{"measurement":{"Gyro":[-0.23721115,-0.07893584,0.0]},"timestamp":232755634},{"measurement":{"Mag":[-500.91873,-297.1419,-94.36114]},"timestamp":232755634},{"measurement":{"Baro":[24.78625,1000.28796,1169.0231]},"timestamp":232755634},{"measurement":{"Accel":[-0.6004555,0.51058745,-0.13791412]},"timestamp":232775690},{"measurement":{"Gyro":[-0.23514658,-0.08488868,0.0]},"timestamp":232775690},{"measurement":{"Mag":[-486.9657,-317.24207,-101.69336]},"timestamp":232775690},{"measurement":{"Baro":[24.76955,1000.3842,1170.8031]},"timestamp":232775690},{"measurement":{"Accel":[-0.63000137,0.47068822,-0.1478436]},"timestamp":232795754},{"measurement":{"Gyro":[-0.23293184,-0.09078966,0.0]},"timestamp":232795754},{"measurement":{"Mag":[-472.12976,-336.6489,-109.01207]},"timestamp":232795754},{"measurement":{"Baro":[24.752863,1000.48096,1172.6035]},"timestamp":232795754},{"measurement":{"Accel":[-0.65681255,0.4290238,-0.15775234]},"timestamp":232815821}]
+        data:
+        [{"measurement":{"Gyro":[-0.24088828,-0.066879265,0.0]},"timestamp":232715507},{"measurement":{"Mag":[-526.0639,-255.0,-79.647964]},"timestamp":232715507},{"measurement":{"Baro":[24.819702,1000.097,1165.5216]},"timestamp":232715507},{"measurement":{"Accel":[-0.5336549,0.5843661,-0.11799745]},"timestamp":232735571},{"measurement":{"Gyro":[-0.23912565,-0.07293094,0.0]},"timestamp":232735571},{"measurement":{"Mag":[-513.9635,-276.37805,-87.01168]},"timestamp":232735571},{"measurement":{"Baro":[24.802967,1000.19226,1167.2623]},"timestamp":232735571},{"measurement":{"Accel":[-0.56830263,0.5485306,-0.12796712]},"timestamp":232755634},{"measurement":{"Gyro":[-0.23721115,-0.07893584,0.0]},"timestamp":232755634},{"measurement":{"Mag":[-500.91873,-297.1419,-94.36114]},"timestamp":232755634},{"measurement":{"Baro":[24.78625,1000.28796,1169.0231]},"timestamp":232755634},{"measurement":{"Accel":[-0.6004555,0.51058745,-0.13791412]},"timestamp":232775690},{"measurement":{"Gyro":[-0.23514658,-0.08488868,0.0]},"timestamp":232775690},{"measurement":{"Mag":[-486.9657,-317.24207,-101.69336]},"timestamp":232775690},{"measurement":{"Baro":[24.76955,1000.3842,1170.8031]},"timestamp":232775690},{"measurement":{"Accel":[-0.63000137,0.47068822,-0.1478436]},"timestamp":232795754},{"measurement":{"Gyro":[-0.23293184,-0.09078966,0.0]},"timestamp":232795754},{"measurement":{"Mag":[-472.12976,-336.6489,-109.01207]},"timestamp":232795754},{"measurement":{"Baro":[24.752863,1000.48096,1172.6035]},"timestamp":232795754},{"measurement":{"Accel":[-0.65681255,0.4290238,-0.15775234]},"timestamp":232815821}]
       */
       parsed = JSON.parse(e.data);
     } catch {
-      console.log("Failed to parse SSE data:", e.data);
+      console.log('Failed to parse SSE data:', e.data);
       return;
     }
 
@@ -442,6 +449,6 @@
   es.onerror = () => {
     reconnects += 1;
     reconnectsEl.textContent = String(reconnects);
-    setConn("bad", "disconnected (auto-retrying…)");
+    setConn('bad', 'disconnected (auto-retrying…)');
   };
 })();
