@@ -34,12 +34,12 @@ async fn main() -> io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::from(Arc::clone(&data)))
+            .service(event_stream)
             .service(
                 fs::Files::new("", format!("{}/web", env!("CARGO_MANIFEST_DIR")))
                     .index_file("index.html")
                     .use_last_modified(true),
             )
-            .service(event_stream)
             .wrap(Logger::default())
     })
     .bind((args.http_addr.as_str(), args.http_port))?
@@ -50,6 +50,7 @@ async fn main() -> io::Result<()> {
 
 #[get("/events")]
 async fn event_stream(broadcaster: web::Data<Broadcaster>) -> impl Responder {
+    log::info!("SSE client connected");
     broadcaster.new_client().await
 }
 
