@@ -82,8 +82,8 @@
 
   function getCss(varName) {
     return getComputedStyle(document.documentElement)
-        .getPropertyValue(varName)
-        .trim();
+      .getPropertyValue(varName)
+      .trim();
   }
 
   function fmtTime(ms) {
@@ -150,23 +150,7 @@
       };
     }
 
-    if (type === 'temp' || type === 'temperature') {
-      const value = safeNum(raw.value);
-      if (value === null) return null;
-      return {
-        sensor: 'temp',
-        ts_ms,
-        x: null,
-        y: null,
-        z: null,
-        mag: null,
-        theta_deg: null,
-        phi_deg: null,
-        value,
-      };
-    }
-
-    if (type === 'pressure' || type === 'baro' || type === 'barometer') {
+    if (type === "pressure") {
       const value = safeNum(raw.value);
       if (value === null) return null;
       return {
@@ -199,29 +183,24 @@
     const values = raw.measurement[variant];
     const sensor = variant.toLowerCase();
 
-    if (Array.isArray(values) && values.length === 3) {
-      if (sensor === 'accel' || sensor === 'gyro' || sensor === 'mag') {
-        return {
-          sensor,
-          x: values[0],
-          y: values[1],
-          z: values[2],
-          ts: raw.timestamp,
-        };
-      } else if (sensor === 'baro' || sensor === 'pressure') {
-        return {
-          sensor: 'pressure',
-          value: values[1],
-          ts: raw.timestamp,
-        };
-      }
-      console.log('Unknown vector sensor type:', sensor);
-      return null;
-    } else if (Array.isArray(values) && values.length >= 1) {
-      // temperature sensor
+    if (
+      (sensor === "accel" || sensor === "gyro" || sensor === "mag") &&
+      Array.isArray(values) &&
+      values.length === 3
+    ) {
       return {
         sensor,
-        value: values[0],
+        x: values[0],
+        y: values[1],
+        z: values[2],
+        ts: raw.timestamp,
+      };
+    }
+
+    if (sensor === "baro" && Array.isArray(values) && values.length === 3) {
+      return {
+        sensor: "pressure",
+        value: values[1],
         ts: raw.timestamp,
       };
     }
@@ -315,11 +294,10 @@
     Plotly.restyle(dialDiv, {x: [[0, x]], y: [[0, y]]}, [0]);
   }
 
-  initVectorPlot(accelDiv, 'accel');
-  initVectorPlot(gyroDiv, 'gyro');
-  initVectorPlot(magDiv, 'mag');
-  initScalarPlot(tempDiv, 'temp');
-  initScalarPlot(pressureDiv, 'pressure');
+  initVectorPlot(accelDiv, "accel");
+  initVectorPlot(gyroDiv, "gyro");
+  initVectorPlot(magDiv, "mag");
+  initScalarPlot(pressureDiv, "pressure");
   initDial();
 
   function updateRecorderUI() {
@@ -382,9 +360,7 @@
       extendVector(gyroDiv, ts, item.x, item.y, item.z, item.mag);
     } else if (item.sensor === 'mag' && shouldDraw('mag')) {
       extendVector(magDiv, ts, item.x, item.y, item.z, item.mag);
-    } else if (item.sensor === 'temp' && shouldDraw('temp')) {
-      extendScalar(tempDiv, ts, item.value);
-    } else if (item.sensor === 'pressure' && shouldDraw('pressure')) {
+    } else if (item.sensor === "pressure" && shouldDraw("pressure")) {
       extendScalar(pressureDiv, ts, item.value);
     }
   }
@@ -433,47 +409,9 @@
     updateRecorderUI();
   });
 
-  exportBtn.addEventListener('click', async () => {
-    if (!recorder.rows.length) return;
-    if (!window.XLSX) {
-      const s = document.createElement('script');
-      s.src = './xlsx.full.min.js';
-      await new Promise((r, j) => {
-        s.onload = r;
-        s.onerror = j;
-        document.head.appendChild(s);
-      });
-    }
-
-    const wb = XLSX.utils.book_new();
-    const sensors = ['accel', 'gyro', 'mag', 'temp', 'pressure'];
-
-    for (const s of sensors) {
-      const rows = recorder.rows.filter(r => r.sensor === s);
-      const shaped = rows.map(
-          r => isVectorSensor(s) ? {
-            ts_ms: r.ts_ms,
-            x: r.x,
-            y: r.y,
-            z: r.z,
-            mag: r.mag,
-            theta_deg: r.theta_deg,
-            phi_deg: r.phi_deg,
-          } :
-                                   {
-                                     ts_ms: r.ts_ms,
-                                     value: r.value,
-                                   });
-      const ws = XLSX.utils.json_to_sheet(shaped);
-      XLSX.utils.book_append_sheet(wb, ws, s.toUpperCase());
-    }
-
-    XLSX.writeFile(wb, 'kiwi_recording.xlsx');
-  });
-
-  setConn('warn', 'connecting…');
-  reconnectsEl.textContent = '0';
-  lastSeenEl.textContent = '-';
+  setConn("warn", "connecting…");
+  reconnectsEl.textContent = "0";
+  lastSeenEl.textContent = "-";
   bufMaxEl.textContent = String(maxPoints);
   bufCountEl.textContent = '0';
 
