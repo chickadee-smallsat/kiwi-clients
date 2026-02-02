@@ -67,9 +67,12 @@ fn udp_task(address: &str, port: u16, running: Arc<AtomicBool>) {
                 timestamp: tstamp,
                 measurement: mes,
             };
-            sock.send_to(&core::convert::Into::<[u8; _]>::into(mes), &endpoint)
-                .unwrap();
-            sent += 1;
+            if sock
+                .send_to(&core::convert::Into::<[u8; _]>::into(mes), &endpoint)
+                .is_ok()
+            {
+                sent += 1;
+            }
         }
         let dur = Instant::now().duration_since(now);
         let sleep_dur = Duration::from_millis(20).saturating_sub(dur);
@@ -134,6 +137,6 @@ struct Args {
     #[clap(short, long, default_value = "8099")]
     port: u16,
     /// Address to broadcast to
-    #[clap(short, long, default_value = "255.255.255.255")]
+    #[clap(short, long, default_value = "127.0.0.1")]
     address: String,
 }
