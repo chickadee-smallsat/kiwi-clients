@@ -25,7 +25,6 @@
   const thetaEl = document.getElementById('theta');
   const phiEl = document.getElementById('phi');
 
-<<<<<<< HEAD
   const accelDiv = document.getElementById("accelPlot");
   const gyroDiv = document.getElementById("gyroPlot");
   const magDiv = document.getElementById("magPlot");
@@ -33,14 +32,6 @@
   const pressureDiv = document.getElementById("pressurePlot");
   const altitudeDiv = document.getElementById("altitudePlot");
   const dialDiv = document.getElementById("dial");
-=======
-  const accelDiv = document.getElementById('accelPlot');
-  const gyroDiv = document.getElementById('gyroPlot');
-  const magDiv = document.getElementById('magPlot');
-  const tempDiv = document.getElementById('tempPlot');
-  const pressureDiv = document.getElementById('pressurePlot');
-  const dialDiv = document.getElementById('dial');
->>>>>>> 6a679d62d48ef99258b029ca8c23559e72e4ade2
 
   let paused = false;
   let reconnects = 0;
@@ -56,12 +47,7 @@
     rows: [],
   };
 
-<<<<<<< HEAD
   let uiStream = streamSelect ? streamSelect.value : "all";
-=======
-  let latestVectorSample = null;
-  let uiStream = streamSelect ? streamSelect.value : 'all';
->>>>>>> 6a679d62d48ef99258b029ca8c23559e72e4ade2
 
   const FRAME_MS = 50;
   let pending = [];
@@ -171,7 +157,6 @@
     if (type === "pressure") {
       const value = safeNum(raw.value);
       if (value === null) return null;
-<<<<<<< HEAD
       return { sensor: "pressure", ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
     }
 
@@ -179,19 +164,6 @@
       const value = safeNum(raw.value);
       if (value === null) return null;
       return { sensor: "altitude", ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
-=======
-      return {
-        sensor: 'pressure',
-        ts_ms,
-        x: null,
-        y: null,
-        z: null,
-        mag: null,
-        theta_deg: null,
-        phi_deg: null,
-        value,
-      };
->>>>>>> 6a679d62d48ef99258b029ca8c23559e72e4ade2
     }
 
     return null;
@@ -228,11 +200,6 @@
         { sensor: "altitude", value: values[2], ts },
       ];
     }
-<<<<<<< HEAD
-
-=======
-    console.log('Unknown sensor type:', sensor);
->>>>>>> 6a679d62d48ef99258b029ca8c23559e72e4ade2
     return null;
   }
 
