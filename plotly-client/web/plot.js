@@ -177,7 +177,7 @@
       if (value === null) return null;
       return { sensor: "pressure", ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
     }
-
+    console.log("Unknown sensor type:", type);
     return null;
   }
 
@@ -308,7 +308,7 @@
   async function ensureXlsxLoaded() {
     if (window.XLSX) return true;
 
-    const src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+    const src = "./xlsx.full.min.js";
     await new Promise((resolve, reject) => {
       const s = document.createElement("script");
       s.src = src;
@@ -479,14 +479,19 @@
   const es = new EventSource("/events");
 
   es.onopen = () => {
+    console.log("SSE connected");
     setConn("ok", "connected");
   };
 
   es.onmessage = (e) => {
     let parsed;
     try {
+      /*
+        data: [{"measurement":{"Gyro":[-0.24088828,-0.066879265,0.0]},"timestamp":232715507},{"measurement":{"Mag":[-526.0639,-255.0,-79.647964]},"timestamp":232715507},{"measurement":{"Baro":[24.819702,1000.097,1165.5216]},"timestamp":232715507},{"measurement":{"Accel":[-0.5336549,0.5843661,-0.11799745]},"timestamp":232735571},{"measurement":{"Gyro":[-0.23912565,-0.07293094,0.0]},"timestamp":232735571},{"measurement":{"Mag":[-513.9635,-276.37805,-87.01168]},"timestamp":232735571},{"measurement":{"Baro":[24.802967,1000.19226,1167.2623]},"timestamp":232735571},{"measurement":{"Accel":[-0.56830263,0.5485306,-0.12796712]},"timestamp":232755634},{"measurement":{"Gyro":[-0.23721115,-0.07893584,0.0]},"timestamp":232755634},{"measurement":{"Mag":[-500.91873,-297.1419,-94.36114]},"timestamp":232755634},{"measurement":{"Baro":[24.78625,1000.28796,1169.0231]},"timestamp":232755634},{"measurement":{"Accel":[-0.6004555,0.51058745,-0.13791412]},"timestamp":232775690},{"measurement":{"Gyro":[-0.23514658,-0.08488868,0.0]},"timestamp":232775690},{"measurement":{"Mag":[-486.9657,-317.24207,-101.69336]},"timestamp":232775690},{"measurement":{"Baro":[24.76955,1000.3842,1170.8031]},"timestamp":232775690},{"measurement":{"Accel":[-0.63000137,0.47068822,-0.1478436]},"timestamp":232795754},{"measurement":{"Gyro":[-0.23293184,-0.09078966,0.0]},"timestamp":232795754},{"measurement":{"Mag":[-472.12976,-336.6489,-109.01207]},"timestamp":232795754},{"measurement":{"Baro":[24.752863,1000.48096,1172.6035]},"timestamp":232795754},{"measurement":{"Accel":[-0.65681255,0.4290238,-0.15775234]},"timestamp":232815821}]
+      */
       parsed = JSON.parse(e.data);
     } catch {
+      console.log("Failed to parse SSE data:", e.data);
       return;
     }
 
