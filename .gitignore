@@ -2,3 +2,5 @@
 **/[Tt]humb*.db
 **/target
 **/__pycache__
+**/*.xlsx
+**/*.csv
