@@ -288,7 +288,7 @@
     if (!recorder.rows.length) return;
     if (!window.XLSX) {
       const s = document.createElement("script");
-      s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+      s.src = "./xlsx.full.min.js";
       await new Promise((r, j) => {
         s.onload = r;
         s.onerror = j;
