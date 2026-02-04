@@ -1,0 +1,5 @@
+[33md5282a1[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature/dashboard-ui[m[33m, [m[1;31morigin/feature/dashboard-ui[m[33m)[m Optimize SSE UI performance and memory usage
+[33m5acaa77[m Resolve merge conflict and fix baro/temp/pressure parsing
+[33m38d7e42[m Update dashboard HTML and fix baro/temp/pressure plotting
+[33m6a679d6[m Merge branch 'master' into feature/dashboard-ui
+[33mc59af82[m Fix baro parsing and plot pressure from UDP measurement
