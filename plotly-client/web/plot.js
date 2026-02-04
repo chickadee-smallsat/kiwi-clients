@@ -90,128 +90,6 @@
     return new Date(ms).toLocaleTimeString();
   }
 
-  function normalizeTimestampToMs(t) {
-    const n = Number(t);
-    if (!Number.isFinite(n)) return Date.now();
-    if (n > 1e18) return Math.round(n / 1e6);
-    if (n > 1e15) return Math.round(n / 1e3);
-    if (n > 1e12) return Math.round(n);
-    return Math.round(n * 1000);
-  }
-
-  function magnitude(x, y, z) {
-    return Math.sqrt(x * x + y * y + z * z);
-  }
-
-  function toDeg(rad) {
-    return (rad * 180) / Math.PI;
-  }
-
-  function anglesDeg(x, y, z) {
-    const phi = toDeg(Math.atan2(y, x));
-    const rho = Math.sqrt(x * x + y * y);
-    const theta = toDeg(Math.atan2(rho, z));
-    return { phi_deg: phi, theta_deg: theta };
-  }
-
-  function safeNum(v) {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  }
-
-  function isVectorSensor(s) {
-    return s === 'accel' || s === 'gyro' || s === 'mag';
-  }
-
-  function normalizeItem(raw) {
-    const type = (raw.sensor ?? '').toString().toLowerCase();
-    const ts_ms = normalizeTimestampToMs(raw.ts);
-
-    if (isVectorSensor(type)) {
-      const x = safeNum(raw.x);
-      const y = safeNum(raw.y);
-      const z = safeNum(raw.z);
-      if (x === null || y === null || z === null) return null;
-
-      const mag = magnitude(x, y, z);
-      const ang = anglesDeg(x, y, z);
-
-      return {
-        sensor: type,
-        ts_ms,
-        x,
-        y,
-        z,
-        mag,
-        theta_deg: ang.theta_deg,
-        phi_deg: ang.phi_deg,
-        value: null,
-      };
-    }
-
-    if (type === "temp") {
-      const value = safeNum(raw.value);
-      if (value === null) return null;
-      return { sensor: "temp", ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
-    }
-
-    if (type === "pressure") {
-      const value = safeNum(raw.value);
-      if (value === null) return null;
-      return { sensor: "pressure", ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
-    }
-
-    if (type === "altitude") {
-      const value = safeNum(raw.value);
-      if (value === null) return null;
-      return { sensor: "altitude", ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
-    }
-
-    return null;
-  }
-
-  function unpackSerde(raw) {
-    if (!raw || !raw.measurement || typeof raw.timestamp !== 'number') return null;
-
-    const keys = Object.keys(raw.measurement);
-    if (keys.length !== 1) {
-      console.log('Unexpected measurement format:', raw);
-      return null;
-    }
-
-    const variant = keys[0];
-    const values = raw.measurement[variant];
-    const ts = raw.timestamp;
-
-    if (Array.isArray(values) && values.length === 3 && variant !== "Baro") {
-      return {
-        sensor: variant.toLowerCase(),
-        x: values[0],
-        y: values[1],
-        z: values[2],
-        ts,
-      };
-    }
-
-    if (variant === "Baro" && Array.isArray(values) && values.length === 3) {
-      return [
-        { sensor: "temp", value: values[0], ts },
-        { sensor: "pressure", value: values[1], ts },
-        { sensor: "altitude", value: values[2], ts },
-      ];
-    }
-    return null;
-  }
-
-  function applySettings() {
-    windowSec = Math.max(1, Math.min(10, toInt(windowInput.value, 2)));
-    rateHz = Math.max(1, Math.min(240, toInt(rateInput.value, 60)));
-    windowInput.value = String(windowSec);
-    rateInput.value = String(rateHz);
-    maxPoints = Math.max(1, Math.round(windowSec * rateHz));
-    bufMaxEl.textContent = String(maxPoints);
-  }
-
   function updateLastSeen() {
     lastSeenMs = Date.now();
     lastSeenEl.textContent = fmtTime(lastSeenMs);
@@ -222,6 +100,19 @@
     const age = Date.now() - lastSeenMs;
     if (age > 2000) setConn('warn', 'connected (stale…)');
   }, 500);
+
+  function isVectorSensor(s) {
+    return s === 'accel' || s === 'gyro' || s === 'mag';
+  }
+
+  function applySettings() {
+    windowSec = Math.max(1, Math.min(10, toInt(windowInput.value, 2)));
+    rateHz = Math.max(1, Math.min(240, toInt(rateInput.value, 60)));
+    windowInput.value = String(windowSec);
+    rateInput.value = String(rateHz);
+    maxPoints = Math.max(1, Math.round(windowSec * rateHz));
+    bufMaxEl.textContent = String(maxPoints);
+  }
 
   const baseLayout = {
     margin: { l: 40, r: 10, t: 10, b: 30 },
@@ -336,6 +227,7 @@
     bufCountEl.textContent = String(bufferedPoints);
 
     if (recorder.isRecording) recordRow(item);
+    if (recorder.isRecording) updateRecorderUI();
     if (paused) return;
 
     const ts = item.ts_ms;
@@ -427,37 +319,135 @@
   bufMaxEl.textContent = String(maxPoints);
   bufCountEl.textContent = '0';
 
+  const workerSrc = `
+    function normalizeTimestampToMs(t) {
+      const n = Number(t);
+      if (!Number.isFinite(n)) return Date.now();
+      if (n > 1e18) return Math.round(n / 1e6);
+      if (n > 1e15) return Math.round(n / 1e3);
+      if (n > 1e12) return Math.round(n);
+      return Math.round(n * 1000);
+    }
+
+    function safeNum(v) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function isVectorSensor(s) {
+      return s === 'accel' || s === 'gyro' || s === 'mag';
+    }
+
+    function magnitude(x, y, z) {
+      return Math.sqrt(x*x + y*y + z*z);
+    }
+
+    function toDeg(rad) {
+      return (rad * 180) / Math.PI;
+    }
+
+    function anglesDeg(x, y, z) {
+      const phi = toDeg(Math.atan2(y, x));
+      const rho = Math.sqrt(x*x + y*y);
+      const theta = toDeg(Math.atan2(rho, z));
+      return { phi_deg: phi, theta_deg: theta };
+    }
+
+    function normalizeItem(raw) {
+      const type = (raw.sensor ?? '').toString().toLowerCase();
+      const ts_ms = normalizeTimestampToMs(raw.ts);
+
+      if (isVectorSensor(type)) {
+        const x = safeNum(raw.x);
+        const y = safeNum(raw.y);
+        const z = safeNum(raw.z);
+        if (x === null || y === null || z === null) return null;
+
+        const mag = magnitude(x, y, z);
+        const ang = anglesDeg(x, y, z);
+
+        return {
+          sensor: type,
+          ts_ms,
+          x, y, z,
+          mag,
+          theta_deg: ang.theta_deg,
+          phi_deg: ang.phi_deg,
+          value: null,
+        };
+      }
+
+      if (type === "temp" || type === "pressure" || type === "altitude") {
+        const value = safeNum(raw.value);
+        if (value === null) return null;
+        return { sensor: type, ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
+      }
+
+      return null;
+    }
+
+    function unpackSerde(raw) {
+      if (!raw || !raw.measurement || typeof raw.timestamp !== 'number') return null;
+
+      const keys = Object.keys(raw.measurement);
+      if (keys.length !== 1) return null;
+
+      const variant = keys[0];
+      const values = raw.measurement[variant];
+      const ts = raw.timestamp;
+
+      if (Array.isArray(values) && values.length === 3 && variant !== "Baro") {
+        return { sensor: variant.toLowerCase(), x: values[0], y: values[1], z: values[2], ts };
+      }
+
+      if (variant === "Baro" && Array.isArray(values) && values.length === 3) {
+        return [
+          { sensor: "temp", value: values[0], ts },
+          { sensor: "pressure", value: values[1], ts },
+          { sensor: "altitude", value: values[2], ts },
+        ];
+      }
+
+      return null;
+    }
+
+    self.onmessage = (ev) => {
+      const text = ev.data;
+      let parsed;
+      try { parsed = JSON.parse(text); } catch { return; }
+
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      const out = [];
+
+      for (const raw of items) {
+        const unpacked = unpackSerde(raw);
+        if (!unpacked) continue;
+        const list = Array.isArray(unpacked) ? unpacked : [unpacked];
+        for (const u of list) {
+          const item = normalizeItem(u);
+          if (item) out.push(item);
+        }
+      }
+
+      if (out.length) self.postMessage(out);
+    };
+  `;
+
+  const worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: "application/javascript" })));
+
+  worker.onmessage = (ev) => {
+    const batch = ev.data;
+    for (const item of batch) pending.push(item);
+  };
+
   const es = new EventSource('/events');
 
   es.onopen = () => {
     setConn("ok", "connected");
   };
 
-  const MAX_PENDING = 20000; // bounds queued SSE samples so the UI can't run out of memory if data arrives faster than we can render
-  function enqueue(item) {
-    pending.push(item);
-    if (pending.length > MAX_PENDING) pending.splice(0, pending.length - MAX_PENDING);
-  }
-
   es.onmessage = (e) => {
-    let parsed;
-    try {
-      parsed = JSON.parse(e.data);
-    } catch {
-      return;
-    }
-
-    const items = Array.isArray(parsed) ? parsed : [parsed];
-
-    for (const raw of items) {
-      const unpacked = unpackSerde(raw);
-      if (!unpacked) continue;
-      const list = Array.isArray(unpacked) ? unpacked : [unpacked];
-      for (const u of list) {
-        const item = normalizeItem(u);
-        if (item) enqueue(item);
-      }
-    }
+    worker.postMessage(e.data);
   };
 
   es.onerror = () => {
@@ -496,4 +486,4 @@
   }
 
   requestAnimationFrame(frame);
-})();
+})(); 
