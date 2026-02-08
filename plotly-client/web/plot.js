@@ -25,29 +25,34 @@
   const thetaEl = document.getElementById('theta');
   const phiEl = document.getElementById('phi');
 
-  const accelDiv = document.getElementById("accelPlot");
-  const gyroDiv = document.getElementById("gyroPlot");
-  const magDiv = document.getElementById("magPlot");
-  const tempDiv = document.getElementById("tempPlot");
-  const pressureDiv = document.getElementById("pressurePlot");
-  const altitudeDiv = document.getElementById("altitudePlot");
-  const dialDiv = document.getElementById("dial");
+  const accelDiv = document.getElementById('accelPlot');
+  const gyroDiv = document.getElementById('gyroPlot');
+  const magDiv = document.getElementById('magPlot');
+  const tempDiv = document.getElementById('tempPlot');
+  const pressureDiv = document.getElementById('pressurePlot');
+  const altitudeDiv = document.getElementById('altitudePlot');
+  const dialDiv = document.getElementById('dial');
+
+  const params = new URLSearchParams(location.search);
+  const deviceKey = params.get('src') || 'all';
+  const devicePort = deviceKey === 'all' ? null : Number(deviceKey);
 
   let paused = false;
   let reconnects = 0;
   let lastSeenMs = null;
 
-  let windowSec = toInt(windowInput.value, 2);
-  let rateHz = toInt(rateInput.value, 60);
+  let windowSec = toInt(windowInput?.value, 2);
+  let rateHz = toInt(rateInput?.value, 60);
   let maxPoints = Math.max(1, Math.round(windowSec * rateHz));
   let bufferedPoints = 0;
 
   const recorder = {
     isRecording: false,
+    startedAt: null,
     rows: [],
   };
 
-  let uiStream = streamSelect ? streamSelect.value : "all";
+  let uiStream = streamSelect ? streamSelect.value : 'all';
 
   const FRAME_MS = 50;
   let pending = [];
@@ -56,6 +61,10 @@
   function toInt(v, fallback) {
     const n = Number(v);
     return Number.isFinite(n) ? Math.floor(n) : fallback;
+  }
+
+  function getCss(varName) {
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
   }
 
   function setConn(state, text) {
@@ -81,10 +90,6 @@
     connText.style.color = '#ffb8c0';
   }
 
-  function getCss(varName) {
-    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-  }
-
   function fmtTime(ms) {
     if (!ms) return '-';
     return new Date(ms).toLocaleTimeString();
@@ -98,7 +103,7 @@
   setInterval(() => {
     if (!lastSeenMs) return;
     const age = Date.now() - lastSeenMs;
-    if (age > 2000) setConn('warn', 'connected (stale…)');
+    if (age > 2000) setConn('warn', `connected (${deviceKey}) (stale…)`);
   }, 500);
 
   function isVectorSensor(s) {
@@ -106,10 +111,10 @@
   }
 
   function applySettings() {
-    windowSec = Math.max(1, Math.min(10, toInt(windowInput.value, 2)));
-    rateHz = Math.max(1, Math.min(240, toInt(rateInput.value, 60)));
-    windowInput.value = String(windowSec);
-    rateInput.value = String(rateHz);
+    windowSec = Math.max(1, Math.min(10, toInt(windowInput?.value, 2)));
+    rateHz = Math.max(1, Math.min(240, toInt(rateInput?.value, 60)));
+    if (windowInput) windowInput.value = String(windowSec);
+    if (rateInput) rateInput.value = String(rateHz);
     maxPoints = Math.max(1, Math.round(windowSec * rateHz));
     bufMaxEl.textContent = String(maxPoints);
   }
@@ -178,12 +183,12 @@
     Plotly.restyle(dialDiv, { x: [[0, x]], y: [[0, y]] }, [0]);
   }
 
-  initVectorPlot(accelDiv, "accel");
-  initVectorPlot(gyroDiv, "gyro");
-  initVectorPlot(magDiv, "mag");
-  initScalarPlot(tempDiv, "temp");
-  initScalarPlot(pressureDiv, "pressure");
-  initScalarPlot(altitudeDiv, "altitude");
+  initVectorPlot(accelDiv, 'accel');
+  initVectorPlot(gyroDiv, 'gyro');
+  initVectorPlot(magDiv, 'mag');
+  initScalarPlot(tempDiv, 'temp');
+  initScalarPlot(pressureDiv, 'pressure');
+  initScalarPlot(altitudeDiv, 'altitude');
   initDial();
 
   function updateRecorderUI() {
@@ -226,8 +231,10 @@
     bufferedPoints = Math.min(bufferedPoints + 1, maxPoints);
     bufCountEl.textContent = String(bufferedPoints);
 
-    if (recorder.isRecording) recordRow(item);
-    if (recorder.isRecording) updateRecorderUI();
+    if (recorder.isRecording) {
+      recordRow(item);
+      updateRecorderUI();
+    }
     if (paused) return;
 
     const ts = item.ts_ms;
@@ -238,57 +245,69 @@
       extendVector(gyroDiv, ts, item.x, item.y, item.z, item.mag);
     } else if (item.sensor === 'mag' && shouldDraw('mag')) {
       extendVector(magDiv, ts, item.x, item.y, item.z, item.mag);
-    } else if (item.sensor === "temp" && shouldDraw("temp")) {
+    } else if (item.sensor === 'temp' && shouldDraw('temp')) {
       extendScalar(tempDiv, ts, item.value);
-    } else if (item.sensor === "pressure" && shouldDraw("pressure")) {
+    } else if (item.sensor === 'pressure' && shouldDraw('pressure')) {
       extendScalar(pressureDiv, ts, item.value);
-    } else if (item.sensor === "altitude" && shouldDraw("altitude")) {
+    } else if (item.sensor === 'altitude' && shouldDraw('altitude')) {
       extendScalar(altitudeDiv, ts, item.value);
     }
+  }
+
+  function yyyymmdd_hhmmss(ms) {
+    const d = new Date(ms);
+    const pad = (n) => String(n).padStart(2, '0');
+    const Y = d.getFullYear();
+    const M = pad(d.getMonth() + 1);
+    const D = pad(d.getDate());
+    const h = pad(d.getHours());
+    const m = pad(d.getMinutes());
+    const s = pad(d.getSeconds());
+    return `${Y}${M}${D}_${h}${m}${s}`;
   }
 
   applySettings();
   updateRecorderUI();
 
-  windowInput.addEventListener('change', () => {
+  windowInput?.addEventListener('change', () => {
     applySettings();
     bufferedPoints = 0;
-    setConn('ok', 'connected');
+    setConn('ok', `connected (${deviceKey})`);
   });
 
-  rateInput.addEventListener('change', () => {
+  rateInput?.addEventListener('change', () => {
     applySettings();
     bufferedPoints = 0;
-    setConn('ok', 'connected');
+    setConn('ok', `connected (${deviceKey})`);
   });
 
-  if (streamSelect) {
-    streamSelect.addEventListener('change', () => {
-      uiStream = streamSelect.value;
-    });
-  }
+  streamSelect?.addEventListener('change', () => {
+    uiStream = streamSelect.value;
+  });
 
-  pauseBtn.addEventListener('click', () => {
+  pauseBtn?.addEventListener('click', () => {
     paused = !paused;
     pauseBtn.textContent = paused ? 'Resume' : 'Pause';
   });
 
-  recordBtn.addEventListener('click', () => {
+  recordBtn?.addEventListener('click', () => {
     recorder.isRecording = true;
+    recorder.startedAt = Date.now();
     recorder.rows.length = 0;
     updateRecorderUI();
   });
 
-  stopBtn.addEventListener('click', () => {
+  stopBtn?.addEventListener('click', () => {
     recorder.isRecording = false;
     updateRecorderUI();
   });
 
-  exportBtn.addEventListener("click", async () => {
+  exportBtn?.addEventListener('click', async () => {
     if (!recorder.rows.length) return;
+
     if (!window.XLSX) {
-      const s = document.createElement("script");
-      s.src = "./xlsx.full.min.js";
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
       await new Promise((r, j) => {
         s.onload = r;
         s.onerror = j;
@@ -297,11 +316,11 @@
     }
 
     const wb = XLSX.utils.book_new();
-    const sensors = ["accel", "gyro", "mag", "temp", "pressure", "altitude"];
+    const sensors = ['accel', 'gyro', 'mag', 'temp', 'pressure', 'altitude'];
 
     for (const s of sensors) {
-      const rows = recorder.rows.filter(r => r.sensor === s);
-      const shaped = rows.map(r =>
+      const rows = recorder.rows.filter((r) => r.sensor === s);
+      const shaped = rows.map((r) =>
         isVectorSensor(s)
           ? { ts_ms: r.ts_ms, x: r.x, y: r.y, z: r.z, mag: r.mag, theta_deg: r.theta_deg, phi_deg: r.phi_deg }
           : { ts_ms: r.ts_ms, value: r.value }
@@ -310,12 +329,14 @@
       XLSX.utils.book_append_sheet(wb, ws, s.toUpperCase());
     }
 
-    XLSX.writeFile(wb, "kiwi_recording.xlsx");
+    const startedAt = recorder.startedAt ?? Date.now();
+    const filename = `kiwi_experiment_${deviceKey}_${yyyymmdd_hhmmss(startedAt)}.xlsx`;
+    XLSX.writeFile(wb, filename);
   });
 
-  setConn("warn", "connecting…");
-  reconnectsEl.textContent = "0";
-  lastSeenEl.textContent = "-";
+  setConn('warn', 'connecting…');
+  reconnectsEl.textContent = '0';
+  lastSeenEl.textContent = '-';
   bufMaxEl.textContent = String(maxPoints);
   bufCountEl.textContent = '0';
 
@@ -366,18 +387,10 @@
         const mag = magnitude(x, y, z);
         const ang = anglesDeg(x, y, z);
 
-        return {
-          sensor: type,
-          ts_ms,
-          x, y, z,
-          mag,
-          theta_deg: ang.theta_deg,
-          phi_deg: ang.phi_deg,
-          value: null,
-        };
+        return { sensor: type, ts_ms, x, y, z, mag, theta_deg: ang.theta_deg, phi_deg: ang.phi_deg, value: null };
       }
 
-      if (type === "temp" || type === "pressure" || type === "altitude") {
+      if (type === 'temp' || type === 'pressure' || type === 'altitude') {
         const value = safeNum(raw.value);
         if (value === null) return null;
         return { sensor: type, ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
@@ -396,15 +409,15 @@
       const values = raw.measurement[variant];
       const ts = raw.timestamp;
 
-      if (Array.isArray(values) && values.length === 3 && variant !== "Baro") {
+      if (Array.isArray(values) && values.length === 3 && variant !== 'Baro') {
         return { sensor: variant.toLowerCase(), x: values[0], y: values[1], z: values[2], ts };
       }
 
-      if (variant === "Baro" && Array.isArray(values) && values.length === 3) {
+      if (variant === 'Baro' && Array.isArray(values) && values.length === 3) {
         return [
-          { sensor: "temp", value: values[0], ts },
-          { sensor: "pressure", value: values[1], ts },
-          { sensor: "altitude", value: values[2], ts },
+          { sensor: 'temp', value: values[0], ts },
+          { sensor: 'pressure', value: values[1], ts },
+          { sensor: 'altitude', value: values[2], ts },
         ];
       }
 
@@ -433,17 +446,24 @@
     };
   `;
 
-  const worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: "application/javascript" })));
+  const worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: 'application/javascript' })));
+
+  const MAX_PENDING = 20000;
+  function enqueue(item) {
+    pending.push(item);
+    if (pending.length > MAX_PENDING) pending.splice(0, pending.length - MAX_PENDING);
+  }
 
   worker.onmessage = (ev) => {
     const batch = ev.data;
-    for (const item of batch) pending.push(item);
+    for (const item of batch) enqueue(item);
   };
 
-  const es = new EventSource('/events');
+  const esUrl = devicePort ? `/devices/${devicePort}/events` : '/events';
+  const es = new EventSource(esUrl);
 
   es.onopen = () => {
-    setConn("ok", "connected");
+    setConn('ok', `connected (${deviceKey})`);
   };
 
   es.onmessage = (e) => {
@@ -477,7 +497,7 @@
 
         if (recorder.isRecording && batch.length) updateRecorderUI();
 
-        setConn('ok', 'connected');
+        setConn('ok', `connected (${deviceKey})`);
         updateLastSeen();
       }
     }
@@ -486,4 +506,4 @@
   }
 
   requestAnimationFrame(frame);
-})(); 
+})();

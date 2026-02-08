@@ -3,17 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kiwi Sensor Dashboard</title>
-  <script src="./plotly-2.27.0.min.js"></script>
+  <title>Kiwi - Devices</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <header>
     <h1>Kiwi Sensor Dashboard</h1>
-    <p>Live UDP → Rust (Actix) → SSE → Browser · Global recording · Excel export</p>
+    <p>Landing page · Devices appear automatically when UDP data arrives</p>
   </header>
 
-  <main class="wrap">
+  <main class="wrapSingle">
     <section class="card">
       <div class="row space">
         <div class="row">
@@ -21,101 +20,18 @@
             <span class="dot" id="connDot"></span>
             <span id="connText">connecting…</span>
           </span>
-          <span class="pill">buffer: <span id="bufCount">0</span>/<span id="bufMax">0</span></span>
-          <span class="pill">reconnects: <span id="reconnects">0</span></span>
-          <span class="pill">last seen: <span id="lastSeen">-</span></span>
-        </div>
-        <div class="row">
-          <button id="pauseBtn" type="button">Pause</button>
+          <span class="pill">devices: <span id="deviceCount">0</span></span>
         </div>
       </div>
 
-      <div class="controls">
-        <label>
-          Stream
-          <select id="streamSelect">
-            <option value="all">All</option>
-            <option value="accel">Accelerometer</option>
-            <option value="gyro">Gyroscope</option>
-            <option value="mag">Magnetometer</option>
-            <option value="temp">Temperature</option>
-            <option value="pressure">Pressure</option>
-            <option value="altitude">Altitude</option>
-          </select>
-        </label>
+      <div class="deviceList" id="deviceList"></div>
 
-        <label>
-          Window (sec)
-          <input id="windowSec" type="number" min="1" max="10" step="1" value="2" />
-        </label>
-
-        <label>
-          Rate (Hz)
-          <input id="rateHz" type="number" min="1" max="240" step="1" value="60" />
-        </label>
-      </div>
-
-      <div class="plotWrap">
-        <label>Accelerometer (X, Y, Z, Magnitude)</label>
-        <div id="accelPlot"></div>
-      </div>
-
-      <div class="plotWrap">
-        <label>Gyroscope (X, Y, Z, Magnitude)</label>
-        <div id="gyroPlot"></div>
-      </div>
-
-      <div class="plotWrap">
-        <label>Magnetometer (X, Y, Z, Magnitude)</label>
-        <div id="magPlot"></div>
-      </div>
-
-      <div class="grid2">
-        <div class="plotWrap">
-          <label>Temperature</label>
-          <div id="tempPlot"></div>
-        </div>
-
-        <div class="plotWrap">
-          <label>Pressure</label>
-          <div id="pressurePlot"></div>
-        </div>
-
-        <div class="plotWrap">
-          <label>Altitude</label>
-          <div id="altitudePlot"></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <label class="subLabel">Direction Dial (XY Projection)</label>
-      <div id="dial"></div>
-
-      <div class="btnRow">
-        <button id="recordBtn" type="button">Start Recording</button>
-        <button id="stopBtn" type="button" disabled>Stop</button>
-        <button id="exportBtn" type="button" disabled>Export Excel</button>
-      </div>
-
-      <div class="kvs">
-        <div class="kv"><span>time</span><span class="mono" id="t">-</span></div>
-        <div class="kv"><span>x</span><span class="mono" id="x">-</span></div>
-        <div class="kv"><span>y</span><span class="mono" id="y">-</span></div>
-        <div class="kv"><span>z</span><span class="mono" id="z">-</span></div>
-        <div class="kv"><span>magnitude</span><span class="mono" id="mag">-</span></div>
-        <div class="kv"><span>theta (deg)</span><span class="mono" id="theta">-</span></div>
-        <div class="kv"><span>phi (deg)</span><span class="mono" id="phi">-</span></div>
-        <div class="kv"><span>recorded samples</span><span class="mono" id="recCount">0</span></div>
-      </div>
-
-      <p class="small">
-        Recording is global. Excel export creates one sheet per sensor:
-        <span class="mono">Accel, Gyro, Mag, Temp, Pressure, Altitude</span>
+      <p class="small" style="margin-top:12px;">
+        Click a device to open its live dashboard in a new tab.
       </p>
     </section>
   </main>
 
-  <script src="/plot.js"></script>
+  <script src="/landing.js"></script>
 </body>
 </html>
