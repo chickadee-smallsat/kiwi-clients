@@ -3,4 +3,4 @@ resolver = "2"
 members = ["udp-dummy-server", "plotly-client"]
 
 [workspace.dependencies]
-kiwi-measurements = { version = "0.1" }
+kiwi-measurements = { version = "0.1", default-features = false }

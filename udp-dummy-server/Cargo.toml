@@ -4,6 +4,8 @@ version = "0.0.1"
 edition = "2024"
 
 [dependencies]
-clap = {version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 ctrlc = "3.5.0"
-kiwi-measurements = { workspace = true }
+kiwi-measurements = { workspace = true, default-features = false, features = [
+    "serde",
+] }
