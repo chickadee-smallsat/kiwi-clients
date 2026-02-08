@@ -53,21 +53,6 @@ pub async fn udp_listener_unicast(
     log::trace!("[UDPU] Stopping UDP listener");
 }
 
-/// Multicast UDP listener
-/// This function listens for UDP packets on a specified multicast address and port.
-/// # Arguments
-/// * `bind` - The address to bind the socket to.
-/// * `address` - The multicast address to listen on.
-/// * `port` - The port to listen on.
-/// * `interface` - The network interface to bind to.
-/// * `sink` - The broadcast channel to send received data to.
-/// * `running` - A flag to indicate if the listener should keep running.
-///
-/// # Returns
-/// This function does not return a value. It runs indefinitely until `running` is set to false.
-///
-/// # Panics
-/// This function will panic if the addreses are invalid, or IPv4 is not used.
 #[allow(dead_code)]
 pub async fn udp_listener_multicast(
     bind: SocketAddrV4,
@@ -137,43 +122,50 @@ async fn udp_receive_data(
     running: Arc<AtomicBool>,
     datarate: &DataRateCounter,
 ) -> Result<(), ()> {
-    // Receive data
-    let mut buf = Vec::new();
+    use std::collections::HashMap;
+
+    let mut buf_by_port: HashMap<u16, Vec<SingleMeasurement>> = HashMap::new();
     let mut xmit = false;
+
     'receive: while running.load(Ordering::Relaxed) {
         let start = Instant::now();
         if xmit {
-            // Timeout, check if we need to send the buffer
-            if !buf.is_empty() {
-                sink.broadcast(
-                    &serde_json::to_string(&buf).expect("Failed to serialize measurements"),
-                )
-                .await;
-                buf.clear();
+            if !buf_by_port.is_empty() {
+                for (port, buf) in buf_by_port.iter_mut() {
+                    if buf.is_empty() {
+                        continue;
+                    }
+                    let msg = serde_json::to_string(buf).expect("Failed to serialize measurements");
+                    sink.broadcast_device(*port, &msg).await;
+                    buf.clear();
+                }
+                buf_by_port.retain(|_, v| !v.is_empty());
             } else {
                 log::trace!("[{kind}] No data received, continuing to listen");
-                Err(())?; // Exit if no data received
+                Err(())?;
             }
             xmit = false;
         }
-        // Inner loop to fill the buffer, and send it when full or timeout
+
         while running.load(Ordering::Relaxed) {
-            let mut sbuf = [0u8; SINGLE_MEASUREMENT_SIZE]; // 16KB buffer for receiving
+            let mut sbuf = [0u8; SINGLE_MEASUREMENT_SIZE];
             tokio::select! {
                 res = socket.recv_from(&mut sbuf) => {
                     match res {
-                        Ok((size, _src)) => {
+                        Ok((size, src)) => {
                             if let Some((rate, unit)) = datarate.update(size) {
                                 log::info!("[{kind}] Receiving data rate: {rate:.3} {unit}");
                             }
                             if let Ok(mes) = SingleMeasurement::try_from(&sbuf[..size]).inspect_err(|e| {
                                 log::warn!("[{kind}] Received invalid measurement: {e:?}");
                             }) {
-                                buf.push(mes);
+                                let src_port = src.port();
+                                sink.register_port(src_port).await;
+                                buf_by_port.entry(src_port).or_default().push(mes);
                             }
                         }
                         Err(_) => {
-                            Err(())?; // Exit on error
+                            Err(())?;
                         }
                     }
                     if start.elapsed() >= Duration::from_millis(100) {

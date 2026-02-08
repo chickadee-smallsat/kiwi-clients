@@ -34,7 +34,11 @@ async fn main() -> io::Result<()> {
     HttpServer::new(move || {
         let app = App::new()
             .app_data(web::Data::from(Arc::clone(&data)))
-            .service(event_stream);
+            .service(event_stream)
+            .service(devices_stream)
+            .service(devices_list)
+            .service(device_stream);
+
         #[cfg(debug_assertions)]
         // Serve static files from the local filesystem in debug mode
         let app = app.service(
@@ -42,9 +46,11 @@ async fn main() -> io::Result<()> {
                 .index_file("index.html")
                 .use_last_modified(true),
         );
+
         #[cfg(not(debug_assertions))]
         // Serve embedded static files in release mode
         let app = app.service(assets::serve_assets);
+
         app.wrap(Logger::default())
     })
     .bind((args.http_addr.as_str(), args.http_port))?
@@ -60,6 +66,33 @@ async fn event_stream(broadcaster: web::Data<Broadcaster>) -> impl Responder {
     #[cfg(not(debug_assertions))]
     log::debug!("SSE client connected");
     broadcaster.new_client().await
+}
+
+#[get("/devices/events")]
+async fn devices_stream(broadcaster: web::Data<Broadcaster>) -> impl Responder {
+    #[cfg(debug_assertions)]
+    log::info!("Device list SSE client connected");
+    #[cfg(not(debug_assertions))]
+    log::debug!("Device list SSE client connected");
+    broadcaster.new_device_list_client().await
+}
+
+#[get("/devices")]
+async fn devices_list(broadcaster: web::Data<Broadcaster>) -> impl Responder {
+    web::Json(broadcaster.known_ports())
+}
+
+#[get("/devices/{port}/events")]
+async fn device_stream(
+    broadcaster: web::Data<Broadcaster>,
+    port: web::Path<u16>,
+) -> impl Responder {
+    #[cfg(debug_assertions)]
+    log::info!("Device SSE client connected for port {}", *port);
+    #[cfg(not(debug_assertions))]
+    log::debug!("Device SSE client connected for port {}", *port);
+
+    broadcaster.new_device_client(*port).await
 }
 
 use clap::Parser;
@@ -87,6 +120,7 @@ mod assets {
     // #[cfg(not(debug_assertions))]
     use actix_web_rust_embed_responder::{EmbedResponse, IntoResponse};
     use rust_embed::{EmbeddedFile, RustEmbed};
+
     #[derive(RustEmbed)]
     #[folder = "web/"]
     struct Asset;
