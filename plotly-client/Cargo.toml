@@ -20,3 +20,4 @@ kiwi-measurements = { workspace = true, features = ["serde"] }
 serde_json = "1.0.145"
 rust-embed = "8.11.0"
 actix-web-rust-embed-responder = "2.3.0"
+open = { version = "5.3", default-features = false }

@@ -4,7 +4,7 @@ from pathlib import Path
 from queue import Empty
 from typing import Any, Literal
 import matplotlib
-from time import perf_counter_ns
+from time import perf_counter_ns, sleep as nanosleep
 from matplotlib.axes import Axes
 from matplotlib.gridspec import GridSpec
 import numpy as np
@@ -55,7 +55,9 @@ def draw_loop(
         shutdown: Any,
         datapath: Path = Path.cwd() / 'data',
         savekind: SaveKind = 'netcdf',
-        winsize: int = 1000):
+        winsize: int = 1000,
+        frametime: int = int(1e9 / 1)
+    ):
     """A drawing loop that requests data from the UDP server :func:`udp_loop`
     and plots the data in real-time.
 
@@ -68,6 +70,7 @@ def draw_loop(
         datapath (Path, optional): Path to store NetCDF files. Defaults to current working directory / 'data'.
         savekind (SaveKind, optional): Kind of file to save data. Defaults to 'netcdf'.
         winsize (int, optional): Window size in milliseconds for displaying data. Defaults to 1000.
+        frametime (int, optional): Frame time in nanoseconds for limiting FPS. Defaults to 100_000_000 (10 FPS).
     """
     # The UDP source address
     ip, port = source
@@ -232,7 +235,20 @@ def draw_loop(
     rq_time = 0 # Total request-response time since last info print
     rq_start = perf_counter_ns() # Initialize to avoid uninitialized variable
 
+    loop_prev = perf_counter_ns()  # Top of the loop
     while True: # Main loop
+        loop_now = perf_counter_ns()
+        loop_dt = loop_now - loop_prev
+        loop_prev = loop_now
+        # Sleep to limit to ~10 FPS
+        # if loop_dt < frametime:  # 10 FPS
+        #     sleep_time = (frametime - loop_dt) / 1e9
+        #     try:
+        #         plt.pause(sleep_time)
+        #     except KeyboardInterrupt:
+        #         print(f"[{ip}:{port}] Interrupted by user")
+        #         plt.close('all')
+        #         exit(0)
         # Redraw the figure
         try:
             fig.canvas.draw_idle()
@@ -253,8 +269,9 @@ def draw_loop(
             # Note: This condition does not happen since a window is spawned
             # when a client connects, and the window is closed when the client disconnects.
             if not request.full():
-                rq_start = perf_counter_ns() # Start time of request
+                # rq_start = perf_counter_ns() # Start time of request
                 request.put_nowait(1)
+            rq_start = perf_counter_ns() # Start time of request
             df = response.get(timeout=1.0)
             rq_end = perf_counter_ns() # End time of response
             if df is None:
@@ -338,12 +355,14 @@ def draw_loop(
                 # Update the text in the figure
                 curtime.set_text(outtxt.replace(', ', '\n'))
                 rq_time = 0 # Reset request-response time
+            
         except Empty: # No response from UDP thread
             continue
         except KeyboardInterrupt: # Interrupted by user
             print(f"[{ip}:{port}] Interrupted by user")
             plt.close('all')
             exit(0)
+    
     shutdown.set()
     datastor.close()
     print(f"[{ip}:{port}] Done receiving data")

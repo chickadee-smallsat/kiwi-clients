@@ -23,6 +23,10 @@ async fn main() -> io::Result<()> {
         args.http_port
     );
 
+    if let Err(e) = open::that(format!("http://localhost:{}", args.http_port)) {
+        log::warn!("Failed to open browser: {}", e)
+    }
+
     actix_web::rt::spawn({
         let broadcaster = Arc::clone(&data);
         async move {
