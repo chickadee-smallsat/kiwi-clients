@@ -23,11 +23,13 @@ class Client:
     gyro: DataBuffer
     mag: DataBuffer
     baro: DataBuffer
-    request: Queue # Plot thread requests data: Queue[int]
-    response: Queue # UDP thread sends data: Queue[Tuple[DataFrame, DataFrame, DataFrame, DataFrame]]
-    info: Queue # UDP thread sends info: Queue[Tuple[float, str, float, str]]
-    shutdown: Any # Plot thread signals window closed: Event
+    request: Queue  # Plot thread requests data: Queue[int]
+    # UDP thread sends data: Queue[Tuple[DataFrame, DataFrame, DataFrame, DataFrame]]
+    response: Queue
+    info: Queue  # UDP thread sends info: Queue[Tuple[float, str, float, str]]
+    shutdown: Any  # Plot thread signals window closed: Event
     datarate: DataRate
+    last: int = perf_counter_ns()
 
 
 class DataRate:
@@ -69,7 +71,14 @@ class DataRate:
 # %% UDP server loop
 
 
-def udp_loop(host: str, port: int, datapath: Path = Path.cwd() / 'data', savekind: SaveKind = 'excel', winsize: int = 2000):
+def udp_loop(
+    host: str,
+    port: int,
+    datapath: Path = Path.cwd() / 'data',
+    savekind: SaveKind = 'excel',
+    winsize: int = 2000,
+    frametime: int = int(1e9 / 2)
+):
     """UDP client loop.
 
     Args:
@@ -87,10 +96,10 @@ def udp_loop(host: str, port: int, datapath: Path = Path.cwd() / 'data', savekin
     closed: set = set()
     # Create UDP socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind((host, port)) # Bind to address and port
+    sock.bind((host, port))  # Bind to address and port
     print(f"[UDP] Listening for UDP packets on {host}:{port}")
 
-    while True: # Main event loop
+    while True:  # Main event loop
         # Try to receive UDP packet
         try:
             temp, loc = sock.recvfrom(SINGLE_MEASUREMENT_SIZE)
@@ -128,9 +137,9 @@ def udp_loop(host: str, port: int, datapath: Path = Path.cwd() / 'data', savekin
             continue
         # Process received packet
         try:
-            client = clients[loc] # Retrieve the client communication objects
-            info = client.datarate.update(len(temp)) # Update data rate
-            if info is not None: # Send data rate info to plot thread
+            client = clients[loc]  # Retrieve the client communication objects
+            info = client.datarate.update(len(temp))  # Update data rate
+            if info is not None:  # Send data rate info to plot thread
                 client.info.put_nowait(info)
             # Decode the packet and store data in buffers
             decode_packet(
@@ -149,14 +158,18 @@ def udp_loop(host: str, port: int, datapath: Path = Path.cwd() / 'data', savekin
                     sock.close()
                     break
             # Handle data request from plot thread
+            # elif (perf_counter_ns() - client.last) > frametime:
+            #     client.last = perf_counter_ns()
             elif client.request.get_nowait() is not None:
                 # Prepare dataframes and send to plot thread
                 accel = client.accel.to_dataframe(
-                    ['tstamp', 'x', 'y', 'z'])
+                    ['tstamp', 'x', 'y', 'z']
+                )
                 gyro = client.gyro.to_dataframe(['tstamp', 'x', 'y', 'z'])
                 mag = client.mag.to_dataframe(['tstamp', 'x', 'y', 'z'])
                 baro = client.baro.to_dataframe(
-                    ('tstamp', 'temperature', 'pressure', 'altitude'))
+                    ('tstamp', 'temperature', 'pressure', 'altitude')
+                )
                 client.response.put_nowait((accel, gyro, mag, baro))
         except struct.error as e:
             # type: ignore
