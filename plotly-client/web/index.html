@@ -8,7 +8,7 @@
 </head>
 <body>
   <header>
-    <h1>Kiwi Sensor Dashboard</h1>
+    <h1 id="boardName">Kiwi Sensor Dashboard</h1>
     <p>Landing page · Devices appear automatically when UDP data arrives</p>
   </header>
 
@@ -21,6 +21,15 @@
             <span id="connText">connecting…</span>
           </span>
           <span class="pill">devices: <span id="deviceCount">0</span></span>
+        </div>
+        <div class="row">
+          <label class="inlineLabel">
+            Theme
+            <select id="themeSelect">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </label>
         </div>
       </div>
 

@@ -12,6 +12,10 @@
   const rateInput = document.getElementById('rateHz');
   const streamSelect = document.getElementById('streamSelect');
 
+  const themeSelect = document.getElementById('themeSelect');
+  const paletteSelect = document.getElementById('paletteSelect');
+  const boardNameEl = document.getElementById('boardName');
+
   const recordBtn = document.getElementById('recordBtn');
   const stopBtn = document.getElementById('stopBtn');
   const exportBtn = document.getElementById('exportBtn');
@@ -31,11 +35,15 @@
   const tempDiv = document.getElementById('tempPlot');
   const pressureDiv = document.getElementById('pressurePlot');
   const altitudeDiv = document.getElementById('altitudePlot');
+  const thetaGDiv = document.getElementById('thetaGPlot');
+  const thetaMDiv = document.getElementById('thetaMPlot');
+  const phiMDiv = document.getElementById('phiMPlot');
   const dialDiv = document.getElementById('dial');
 
   const params = new URLSearchParams(location.search);
   const deviceKey = params.get('src') || 'all';
   const devicePort = deviceKey === 'all' ? null : Number(deviceKey);
+  const board = params.get('board');
 
   let paused = false;
   let reconnects = 0;
@@ -53,10 +61,23 @@
   };
 
   let uiStream = streamSelect ? streamSelect.value : 'all';
+  let uiStreams = new Set();
 
-  const FRAME_MS = 50;
+  const FRAME_MS = 33;
   let pending = [];
   let lastFrameMs = 0;
+
+  const draw = {
+    accel: { ts: [], x: [], y: [], z: [], mag: [], theta: [] },
+    gyro: { ts: [], x: [], y: [], z: [], mag: [] },
+    mag: { ts: [], x: [], y: [], z: [], mag: [], theta: [], phi: [] },
+    temp: { ts: [], v: [] },
+    pressure: { ts: [], v: [] },
+    altitude: { ts: [], v: [] },
+  };
+
+  const dialStats = document.getElementById('dialStats');
+  if (dialStats) dialStats.open = false;
 
   function toInt(v, fallback) {
     const n = Number(v);
@@ -119,14 +140,120 @@
     bufMaxEl.textContent = String(maxPoints);
   }
 
+  function getSelectedStreams() {
+    const set = new Set();
+    if (!streamSelect) return set;
+    for (const opt of Array.from(streamSelect.selectedOptions || [])) {
+      if (opt && opt.value) set.add(opt.value);
+    }
+    return set;
+  }
+
+  function shouldDraw(sensor) {
+    if (uiStreams.size) return uiStreams.has(sensor);
+    return uiStream === 'all' || uiStream === sensor;
+  }
+
+  function plotVisible(div) {
+    if (!div) return false;
+    const d = div.closest('details');
+    if (!d) return true;
+    return !!d.open;
+  }
+
+  const THEMES = {
+    dark: {
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      font: { color: '#e8eefc' },
+      xaxis: { gridcolor: 'rgba(255,255,255,0.12)' },
+      yaxis: { gridcolor: 'rgba(255,255,255,0.12)' },
+    },
+    light: {
+      paper_bgcolor: '#ffffff',
+      plot_bgcolor: '#ffffff',
+      font: { color: '#0b1220' },
+      xaxis: { gridcolor: 'rgba(0,0,0,0.12)' },
+      yaxis: { gridcolor: 'rgba(0,0,0,0.12)' },
+    },
+  };
+
+  const PALETTES = {
+    default: ['#7aa2ff', '#7dffcb', '#ffb86c', '#ff6b81', '#c792ea', '#ffd166'],
+    colorblind: ['#0072B2', '#E69F00', '#009E73', '#D55E00', '#CC79A7', '#56B4E9'],
+  };
+
+  function applyTheme(theme) {
+    document.body.classList.toggle('light', theme === 'light');
+    document.body.classList.toggle('dark', theme !== 'light');
+  }
+
+  function applyThemeToPlots(theme) {
+    const t = THEMES[theme] || THEMES.dark;
+    const divs = [accelDiv, gyroDiv, magDiv, tempDiv, pressureDiv, altitudeDiv, thetaGDiv, thetaMDiv, phiMDiv];
+    for (const div of divs) {
+      if (!div) continue;
+      Plotly.relayout(div, {
+        paper_bgcolor: t.paper_bgcolor,
+        plot_bgcolor: t.plot_bgcolor,
+        font: t.font,
+        xaxis: { ...(t.xaxis || {}) },
+        yaxis: { ...(t.yaxis || {}) },
+      });
+    }
+    Plotly.relayout(dialDiv, {
+      paper_bgcolor: t.paper_bgcolor,
+      plot_bgcolor: t.plot_bgcolor,
+    });
+  }
+
+  function applyPaletteToPlots(paletteKey) {
+    const colors = PALETTES[paletteKey] || PALETTES.default;
+
+    function applyVector(div) {
+      if (!div) return;
+      Plotly.restyle(
+        div,
+        { line: [{ color: colors[0] }, { color: colors[1] }, { color: colors[2] }, { color: colors[3] }] },
+        [0, 1, 2, 3]
+      );
+    }
+
+    function applyScalar(div, color) {
+      if (!div) return;
+      Plotly.restyle(div, { line: { color } }, [0]);
+    }
+
+    applyVector(accelDiv);
+    applyVector(gyroDiv);
+    applyVector(magDiv);
+    applyScalar(tempDiv, colors[0]);
+    applyScalar(pressureDiv, colors[1]);
+    applyScalar(altitudeDiv, colors[2]);
+    applyScalar(thetaGDiv, colors[3]);
+    applyScalar(thetaMDiv, colors[4] || colors[0]);
+    applyScalar(phiMDiv, colors[5] || colors[1]);
+  }
+
+  function initThemeAndPalette() {
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    const savedPalette = localStorage.getItem('palette') || 'default';
+    if (themeSelect) themeSelect.value = savedTheme;
+    if (paletteSelect) paletteSelect.value = savedPalette;
+    applyTheme(savedTheme);
+    applyThemeToPlots(savedTheme);
+    applyPaletteToPlots(savedPalette);
+  }
+
   const baseLayout = {
-    margin: { l: 40, r: 10, t: 10, b: 30 },
+    margin: { l: 52, r: 12, t: 16, b: 40 },
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
-    xaxis: { title: '', showgrid: true, zeroline: false },
-    yaxis: { title: '', showgrid: true, zeroline: false },
+    xaxis: { title: '', showgrid: true, zeroline: false, tickfont: { size: 13 }, titlefont: { size: 14 } },
+    yaxis: { title: '', showgrid: true, zeroline: false, tickfont: { size: 13 }, titlefont: { size: 14 } },
     showlegend: true,
-    legend: { orientation: 'h' },
+    legend: { orientation: 'h', font: { size: 13 } },
+    font: { size: 14 },
   };
 
   const config = { displayModeBar: false, responsive: true };
@@ -156,24 +283,11 @@
       margin: { l: 20, r: 20, t: 10, b: 20 },
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor: 'rgba(0,0,0,0)',
-      xaxis: { range: [-1.2, 1.2], showgrid: true, zeroline: true, scaleanchor: 'y' },
-      yaxis: { range: [-1.2, 1.2], showgrid: true, zeroline: true },
+      xaxis: { range: [-1.2, 1.2], showgrid: true, zeroline: true, scaleanchor: 'y', tickfont: { size: 12 } },
+      yaxis: { range: [-1.2, 1.2], showgrid: true, zeroline: true, tickfont: { size: 12 } },
       showlegend: false,
     };
     Plotly.newPlot(dialDiv, traces, layout, config);
-  }
-
-  function extendVector(div, ts, x, y, z, mag) {
-    Plotly.extendTraces(
-      div,
-      { x: [[ts], [ts], [ts], [ts]], y: [[x], [y], [z], [mag]] },
-      [0, 1, 2, 3],
-      maxPoints
-    );
-  }
-
-  function extendScalar(div, ts, v) {
-    Plotly.extendTraces(div, { x: [[ts]], y: [[v]] }, [0], maxPoints);
   }
 
   function renderDial(phi_deg) {
@@ -189,7 +303,17 @@
   initScalarPlot(tempDiv, 'temp');
   initScalarPlot(pressureDiv, 'pressure');
   initScalarPlot(altitudeDiv, 'altitude');
+  initScalarPlot(thetaGDiv, 'theta (gravity)');
+  initScalarPlot(thetaMDiv, 'theta (mag)');
+  initScalarPlot(phiMDiv, 'phi (mag)');
   initDial();
+
+  if (boardNameEl && board) {
+    boardNameEl.textContent = board;
+    document.title = board;
+  }
+
+  uiStreams = getSelectedStreams();
 
   function updateRecorderUI() {
     recCountEl.textContent = String(recorder.rows.length);
@@ -205,15 +329,8 @@
       x: item.x,
       y: item.y,
       z: item.z,
-      mag: item.mag,
-      theta_deg: item.theta_deg,
-      phi_deg: item.phi_deg,
       value: item.value,
     });
-  }
-
-  function shouldDraw(sensor) {
-    return uiStream === 'all' || uiStream === sensor;
   }
 
   function updateValuePanel(item) {
@@ -239,18 +356,36 @@
 
     const ts = item.ts_ms;
 
-    if (item.sensor === 'accel' && shouldDraw('accel')) {
-      extendVector(accelDiv, ts, item.x, item.y, item.z, item.mag);
-    } else if (item.sensor === 'gyro' && shouldDraw('gyro')) {
-      extendVector(gyroDiv, ts, item.x, item.y, item.z, item.mag);
-    } else if (item.sensor === 'mag' && shouldDraw('mag')) {
-      extendVector(magDiv, ts, item.x, item.y, item.z, item.mag);
-    } else if (item.sensor === 'temp' && shouldDraw('temp')) {
-      extendScalar(tempDiv, ts, item.value);
-    } else if (item.sensor === 'pressure' && shouldDraw('pressure')) {
-      extendScalar(pressureDiv, ts, item.value);
-    } else if (item.sensor === 'altitude' && shouldDraw('altitude')) {
-      extendScalar(altitudeDiv, ts, item.value);
+    if (item.sensor === 'accel' && shouldDraw('accel') && plotVisible(accelDiv)) {
+      draw.accel.ts.push(ts);
+      draw.accel.x.push(item.x);
+      draw.accel.y.push(item.y);
+      draw.accel.z.push(item.z);
+      draw.accel.mag.push(item.mag);
+      draw.accel.theta.push(item.theta_deg);
+    } else if (item.sensor === 'gyro' && shouldDraw('gyro') && plotVisible(gyroDiv)) {
+      draw.gyro.ts.push(ts);
+      draw.gyro.x.push(item.x);
+      draw.gyro.y.push(item.y);
+      draw.gyro.z.push(item.z);
+      draw.gyro.mag.push(item.mag);
+    } else if (item.sensor === 'mag' && shouldDraw('mag') && plotVisible(magDiv)) {
+      draw.mag.ts.push(ts);
+      draw.mag.x.push(item.x);
+      draw.mag.y.push(item.y);
+      draw.mag.z.push(item.z);
+      draw.mag.mag.push(item.mag);
+      draw.mag.theta.push(item.theta_deg);
+      draw.mag.phi.push(item.phi_deg);
+    } else if (item.sensor === 'temp' && shouldDraw('temp') && plotVisible(tempDiv)) {
+      draw.temp.ts.push(ts);
+      draw.temp.v.push(item.value);
+    } else if (item.sensor === 'pressure' && shouldDraw('pressure') && plotVisible(pressureDiv)) {
+      draw.pressure.ts.push(ts);
+      draw.pressure.v.push(item.value);
+    } else if (item.sensor === 'altitude' && shouldDraw('altitude') && plotVisible(altitudeDiv)) {
+      draw.altitude.ts.push(ts);
+      draw.altitude.v.push(item.value);
     }
   }
 
@@ -268,6 +403,7 @@
 
   applySettings();
   updateRecorderUI();
+  initThemeAndPalette();
 
   windowInput?.addEventListener('change', () => {
     applySettings();
@@ -282,7 +418,21 @@
   });
 
   streamSelect?.addEventListener('change', () => {
+    uiStreams = getSelectedStreams();
     uiStream = streamSelect.value;
+  });
+
+  themeSelect?.addEventListener('change', () => {
+    const v = themeSelect.value || 'dark';
+    localStorage.setItem('theme', v);
+    applyTheme(v);
+    applyThemeToPlots(v);
+  });
+
+  paletteSelect?.addEventListener('change', () => {
+    const v = paletteSelect.value || 'default';
+    localStorage.setItem('palette', v);
+    applyPaletteToPlots(v);
   });
 
   pauseBtn?.addEventListener('click', () => {
@@ -316,21 +466,34 @@
     }
 
     const wb = XLSX.utils.book_new();
-    const sensors = ['accel', 'gyro', 'mag', 'temp', 'pressure', 'altitude'];
 
-    for (const s of sensors) {
+    const vecSensors = ['accel', 'gyro', 'mag'];
+    for (const s of vecSensors) {
       const rows = recorder.rows.filter((r) => r.sensor === s);
-      const shaped = rows.map((r) =>
-        isVectorSensor(s)
-          ? { ts_ms: r.ts_ms, x: r.x, y: r.y, z: r.z, mag: r.mag, theta_deg: r.theta_deg, phi_deg: r.phi_deg }
-          : { ts_ms: r.ts_ms, value: r.value }
-      );
+      const shaped = rows.map((r) => ({ ts_ms: r.ts_ms, x: r.x, y: r.y, z: r.z }));
       const ws = XLSX.utils.json_to_sheet(shaped);
       XLSX.utils.book_append_sheet(wb, ws, s.toUpperCase());
     }
 
+    const baroRows = recorder.rows.filter((r) => r.sensor === 'temp' || r.sensor === 'pressure' || r.sensor === 'altitude');
+    const map = new Map();
+    for (const r of baroRows) {
+      let row = map.get(r.ts_ms);
+      if (!row) {
+        row = { ts_ms: r.ts_ms, temp: null, pressure: null, altitude: null };
+        map.set(r.ts_ms, row);
+      }
+      if (r.sensor === 'temp') row.temp = r.value;
+      else if (r.sensor === 'pressure') row.pressure = r.value;
+      else if (r.sensor === 'altitude') row.altitude = r.value;
+    }
+    const baroShaped = Array.from(map.values()).sort((a, b) => a.ts_ms - b.ts_ms);
+    const wsBaro = XLSX.utils.json_to_sheet(baroShaped);
+    XLSX.utils.book_append_sheet(wb, wsBaro, 'BARO');
+
     const startedAt = recorder.startedAt ?? Date.now();
-    const filename = `kiwi_experiment_${deviceKey}_${yyyymmdd_hhmmss(startedAt)}.xlsx`;
+    const base = board ? board.replace(/[^\w\-]+/g, '_') : 'kiwi';
+    const filename = `${base}_${deviceKey}_${yyyymmdd_hhmmss(startedAt)}.xlsx`;
     XLSX.writeFile(wb, filename);
   });
 
@@ -476,19 +639,97 @@
     setConn('bad', 'disconnected (auto-retrying…)');
   };
 
+  function flush() {
+    if (draw.accel.ts.length) {
+      Plotly.extendTraces(
+        accelDiv,
+        { x: [draw.accel.ts, draw.accel.ts, draw.accel.ts, draw.accel.ts], y: [draw.accel.x, draw.accel.y, draw.accel.z, draw.accel.mag] },
+        [0, 1, 2, 3],
+        maxPoints
+      );
+      if (thetaGDiv && plotVisible(thetaGDiv)) {
+        Plotly.extendTraces(thetaGDiv, { x: [draw.accel.ts], y: [draw.accel.theta] }, [0], maxPoints);
+      }
+      draw.accel.ts.length = 0;
+      draw.accel.x.length = 0;
+      draw.accel.y.length = 0;
+      draw.accel.z.length = 0;
+      draw.accel.mag.length = 0;
+      draw.accel.theta.length = 0;
+    }
+
+    if (draw.gyro.ts.length) {
+      Plotly.extendTraces(
+        gyroDiv,
+        { x: [draw.gyro.ts, draw.gyro.ts, draw.gyro.ts, draw.gyro.ts], y: [draw.gyro.x, draw.gyro.y, draw.gyro.z, draw.gyro.mag] },
+        [0, 1, 2, 3],
+        maxPoints
+      );
+      draw.gyro.ts.length = 0;
+      draw.gyro.x.length = 0;
+      draw.gyro.y.length = 0;
+      draw.gyro.z.length = 0;
+      draw.gyro.mag.length = 0;
+    }
+
+    if (draw.mag.ts.length) {
+      Plotly.extendTraces(
+        magDiv,
+        { x: [draw.mag.ts, draw.mag.ts, draw.mag.ts, draw.mag.ts], y: [draw.mag.x, draw.mag.y, draw.mag.z, draw.mag.mag] },
+        [0, 1, 2, 3],
+        maxPoints
+      );
+      if (thetaMDiv && plotVisible(thetaMDiv)) {
+        Plotly.extendTraces(thetaMDiv, { x: [draw.mag.ts], y: [draw.mag.theta] }, [0], maxPoints);
+      }
+      if (phiMDiv && plotVisible(phiMDiv)) {
+        Plotly.extendTraces(phiMDiv, { x: [draw.mag.ts], y: [draw.mag.phi] }, [0], maxPoints);
+      }
+      draw.mag.ts.length = 0;
+      draw.mag.x.length = 0;
+      draw.mag.y.length = 0;
+      draw.mag.z.length = 0;
+      draw.mag.mag.length = 0;
+      draw.mag.theta.length = 0;
+      draw.mag.phi.length = 0;
+    }
+
+    if (draw.temp.ts.length) {
+      Plotly.extendTraces(tempDiv, { x: [draw.temp.ts], y: [draw.temp.v] }, [0], maxPoints);
+      draw.temp.ts.length = 0;
+      draw.temp.v.length = 0;
+    }
+
+    if (draw.pressure.ts.length) {
+      Plotly.extendTraces(pressureDiv, { x: [draw.pressure.ts], y: [draw.pressure.v] }, [0], maxPoints);
+      draw.pressure.ts.length = 0;
+      draw.pressure.v.length = 0;
+    }
+
+    if (draw.altitude.ts.length) {
+      Plotly.extendTraces(altitudeDiv, { x: [draw.altitude.ts], y: [draw.altitude.v] }, [0], maxPoints);
+      draw.altitude.ts.length = 0;
+      draw.altitude.v.length = 0;
+    }
+  }
+
   function frame(now) {
     if (now - lastFrameMs >= FRAME_MS) {
       lastFrameMs = now;
 
       if (pending.length) {
-        const maxItemsThisFrame = Math.max(1, Math.round(rateHz * (FRAME_MS / 1000) * 3));
-        const batch = pending.splice(0, maxItemsThisFrame);
+        const MAX_LAG_ITEMS = maxPoints;
+        if (pending.length > MAX_LAG_ITEMS) pending.splice(0, pending.length - MAX_LAG_ITEMS);
+
+        const batch = pending.splice(0, 600);
 
         let lastVector = null;
         for (const item of batch) {
           if (isVectorSensor(item.sensor)) lastVector = item;
           handleItem(item);
         }
+
+        flush();
 
         if (lastVector) {
           updateValuePanel(lastVector);
