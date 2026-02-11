@@ -4,9 +4,25 @@
   const connText = document.getElementById('connText');
   const deviceCountEl = document.getElementById('deviceCount');
   const listEl = document.getElementById('deviceList');
+  const themeSelect = document.getElementById('themeSelect');
+  const boardNameEl = document.getElementById('boardName');
 
   const devices = new Set();
   let reconnects = 0;
+
+  const params = new URLSearchParams(window.location.search);
+  const board = params.get('board');
+
+  function applyTheme(theme) {
+    document.body.classList.toggle('light', theme === 'light');
+    document.body.classList.toggle('dark', theme !== 'light');
+  }
+
+  function initTheme() {
+    const saved = localStorage.getItem('theme') || 'dark';
+    if (themeSelect) themeSelect.value = saved;
+    applyTheme(saved);
+  }
 
   function getCss(varName) {
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
@@ -46,7 +62,7 @@
       btn.type = 'button';
       btn.textContent = `Open device ${port}`;
       btn.addEventListener('click', () => {
-        const url = `/dashboard.html?src=${encodeURIComponent(port)}`;
+        const url = `/dashboard.html?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
         window.open(url, '_blank', 'noopener,noreferrer');
       });
       listEl.appendChild(btn);
@@ -56,6 +72,21 @@
   function addPorts(ports) {
     for (const p of ports) devices.add(String(p));
     render();
+  }
+
+  initTheme();
+
+  if (boardNameEl && board) {
+    boardNameEl.textContent = board;
+    document.title = `${board} - Devices`;
+  }
+
+  if (themeSelect) {
+    themeSelect.addEventListener('change', () => {
+      const v = themeSelect.value || 'dark';
+      localStorage.setItem('theme', v);
+      applyTheme(v);
+    });
   }
 
   setConn('warn', 'connecting…');

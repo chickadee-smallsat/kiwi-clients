@@ -1,7 +1,20 @@
 :root{
-  --bg:#0b1020; --panel:#111a33; --border:#1c2750;
-  --text:#e8ecff; --muted:#a7b0d8; --grid:#22306a;
-  --ok:#2f8f6a; --warn:#caa84a; --bad:#8f2f3b;
+  --bg:#0b1020;
+  --panel:#111a33;
+  --border:#1c2750;
+  --text:#e8ecff;
+  --muted:#a7b0d8;
+  --grid:#22306a;
+  --ok:#2f8f6a;
+  --warn:#caa84a;
+  --bad:#8f2f3b;
+
+  --okText:#bfffe2;
+  --warnText:#ffe6a8;
+  --badText:#ffb8c0;
+
+  --ctl:#0e1530;
+  --plotBg:#0a0f24;
 }
 
 * { box-sizing: border-box; }
@@ -11,6 +24,26 @@ body{
   font-family: system-ui, Arial;
   background:var(--bg);
   color:var(--text);
+}
+
+body.light{
+  --bg:#f6f7fb;
+  --panel:#ffffff;
+  --border:#d7dbea;
+  --text:#0b1220;
+  --muted:#475066;
+  --grid:#c7cde4;
+
+  --ok:#137a55;
+  --warn:#9a7a10;
+  --bad:#a11a2f;
+
+  --okText:#0b5a3f;
+  --warnText:#6a5204;
+  --badText:#8a0e23;
+
+  --ctl:#ffffff;
+  --plotBg:#ffffff;
 }
 
 header{
@@ -33,7 +66,8 @@ header p{
   padding:16px 18px;
   display:grid;
   gap:14px;
-  grid-template-columns: 1.4fr 1fr;
+  grid-template-columns: 3fr 1fr; /* 75% plots | 25% dial panel */
+  align-items:start;
 }
 
 .card{
@@ -85,7 +119,7 @@ label{
 }
 
 input, select, button{
-  background:#0e1530;
+  background:var(--ctl);
   color:var(--text);
   border:1px solid var(--grid);
   border-radius:10px;
@@ -93,16 +127,12 @@ input, select, button{
   font-size:14px;
 }
 
-input{
-  width: 90px;
-}
-
-select{
-  min-width:140px;
-}
+input{ width: 90px; }
+select{ min-width:140px; }
 
 button{ cursor:pointer; }
 button:hover{ border-color:#3a4aa0; }
+body.light button:hover{ border-color:#7a86c8; }
 button:disabled{ opacity:.55; cursor:not-allowed; }
 
 .plotWrap{ margin-top:12px; }
@@ -118,30 +148,34 @@ button:disabled{ opacity:.55; cursor:not-allowed; }
 .plotWrap > div,
 #dial{
   width:100%;
-  height:260px;
-  background:#0a0f24;
+  background:var(--plotBg);
   border:1px solid var(--border);
   border-radius:12px;
 }
 
-/* Larger plots for main sensors */
+/* Main plots */
 #accelPlot,
 #gyroPlot,
 #magPlot{
   height:300px;
 }
 
-/* Scalar sensor plots */
+/* Scalars */
 #tempPlot,
-#pressurePlot{
+#pressurePlot,
+#altitudePlot{
   height:220px;
 }
 
-.grid2{
-  display:grid;
-  gap:14px;
-  grid-template-columns: 1fr 1fr;
-  margin-top:12px;
+/* Right panel compact sizes */
+#dial{
+  height:180px;
+}
+
+#thetaGPlot,
+#thetaMPlot,
+#phiMPlot{
+  height:160px;
 }
 
 .kvs{
@@ -160,21 +194,6 @@ button:disabled{ opacity:.55; cursor:not-allowed; }
 
 .mono{
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.legend{
-  margin-top:8px;
-  font-size:13px;
-  color:var(--muted);
-  display:flex;
-  gap:14px;
-  flex-wrap:wrap;
-}
-
-.legendItem{
-  display:flex;
-  align-items:center;
-  gap:6px;
 }
 
 .small{
@@ -196,4 +215,127 @@ button:disabled{ opacity:.55; cursor:not-allowed; }
   margin-bottom:6px;
   color:var(--muted);
   font-size:13px;
+}
+
+/* Collapsible plot sections */
+.plotDetails,
+.miniDetails{
+  margin-top:12px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  background:rgba(0,0,0,0.02);
+}
+
+body.light .plotDetails,
+body.light .miniDetails{
+  background:#ffffff;
+}
+
+.plotDetails > summary,
+.miniDetails > summary{
+  cursor:pointer;
+  padding:10px 12px;
+  color:var(--text);
+  list-style:none;
+  user-select:none;
+}
+
+.plotDetails > summary::-webkit-details-marker,
+.miniDetails > summary::-webkit-details-marker{
+  display:none;
+}
+
+.plotDetails > summary:after,
+.miniDetails > summary:after{
+  content:"▾";
+  float:right;
+  opacity:.85;
+}
+
+.plotDetails[open] > summary:after,
+.miniDetails[open] > summary:after{
+  content:"▴";
+}
+
+/* Stream dropdown menu (open/close list) */
+.menu{
+  position: relative;
+  min-width: 190px;
+}
+
+.menu > summary{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:8px 10px;
+  border-radius:10px;
+  border:1px solid var(--grid);
+  background: var(--ctl);
+  cursor:pointer;
+  color:var(--text);
+  user-select:none;
+  list-style:none;
+}
+
+.menu > summary::-webkit-details-marker{ display:none; }
+
+.menu > summary::after{
+  content:"▾";
+  opacity:.85;
+}
+
+.menu[open] > summary::after{
+  content:"▴";
+}
+
+.menuBody{
+  margin-top:10px;
+  padding:10px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  background: var(--panel);
+}
+
+.checks{
+  display:grid;
+  gap:8px;
+}
+
+.check{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  color:var(--text);
+  font-size:13px;
+}
+
+.check input{
+  width:auto;
+  padding:0;
+}
+
+/* Left plots scroll, right sticky panel */
+.scrollCard{
+  height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
+.stickyCard{
+  position: sticky;
+  top: 16px;
+  height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
+/* hide scrollbars but keep scrolling */
+.scrollCard,
+.stickyCard{
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollCard::-webkit-scrollbar,
+.stickyCard::-webkit-scrollbar{
+  width:0;
+  height:0;
 }
