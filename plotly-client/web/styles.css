@@ -15,9 +15,16 @@
 
   --ctl:#0e1530;
   --plotBg:#0a0f24;
+
+  --focus:#7dd3fc;
+  --radius:14px;
+  --radiusSm:12px;
+  --gap:14px;
 }
 
-* { box-sizing: border-box; }
+*{ box-sizing:border-box; }
+
+html, body{ height:100%; }
 
 body{
   margin:0;
@@ -27,12 +34,12 @@ body{
 }
 
 body.light{
-  --bg:#f6f7fb;
+  --bg:#f6f8ff;
   --panel:#ffffff;
   --border:#d7dbea;
   --text:#0b1220;
   --muted:#475066;
-  --grid:#c7cde4;
+  --grid:#c8d2ee;
 
   --ok:#137a55;
   --warn:#9a7a10;
@@ -42,8 +49,10 @@ body.light{
   --warnText:#6a5204;
   --badText:#8a0e23;
 
-  --ctl:#ffffff;
+  --ctl:#eef2ff;
   --plotBg:#ffffff;
+
+  --focus:#2563eb;
 }
 
 header{
@@ -65,15 +74,25 @@ header p{
 .wrap{
   padding:16px 18px;
   display:grid;
-  gap:14px;
-  grid-template-columns: 3fr 1fr; /* 75% plots | 25% dial panel */
+  gap:var(--gap);
+  grid-template-columns: minmax(520px, 1fr) 420px;
   align-items:start;
+  height: calc(100vh - 82px);
+}
+
+.wrapSingle{
+  padding:16px 18px;
+  display:grid;
+  gap:var(--gap);
+  grid-template-columns: 1fr;
+  align-items:start;
+  height: calc(100vh - 82px);
 }
 
 .card{
   background:var(--panel);
   border:1px solid var(--border);
-  border-radius:14px;
+  border-radius:var(--radius);
   padding:14px;
 }
 
@@ -108,12 +127,20 @@ header p{
 .controls{
   display:flex;
   gap:10px;
-  align-items:center;
+  align-items:end;
   flex-wrap:wrap;
   margin-top:10px;
 }
 
 label{
+  color:var(--muted);
+  font-size:13px;
+}
+
+.inlineLabel{
+  display:flex;
+  gap:10px;
+  align-items:center;
   color:var(--muted);
   font-size:13px;
 }
@@ -127,13 +154,21 @@ input, select, button{
   font-size:14px;
 }
 
-input{ width: 90px; }
+input{ width: 110px; }
 select{ min-width:140px; }
 
-button{ cursor:pointer; }
+button{ cursor:pointer; font-weight:700; }
 button:hover{ border-color:#3a4aa0; }
 body.light button:hover{ border-color:#7a86c8; }
 button:disabled{ opacity:.55; cursor:not-allowed; }
+
+button:focus-visible,
+summary:focus-visible,
+input:focus-visible,
+select:focus-visible{
+  outline:3px solid var(--focus);
+  outline-offset:2px;
+}
 
 .plotWrap{ margin-top:12px; }
 
@@ -144,38 +179,34 @@ button:disabled{ opacity:.55; cursor:not-allowed; }
   font-size:13px;
 }
 
-/* Plotly containers */
 .plotWrap > div,
 #dial{
   width:100%;
   background:var(--plotBg);
   border:1px solid var(--border);
-  border-radius:12px;
+  border-radius:var(--radiusSm);
 }
 
-/* Main plots */
 #accelPlot,
 #gyroPlot,
 #magPlot{
   height:300px;
 }
 
-/* Scalars */
 #tempPlot,
 #pressurePlot,
 #altitudePlot{
   height:220px;
 }
 
-/* Right panel compact sizes */
 #dial{
-  height:180px;
+  height:220px;
 }
 
 #thetaGPlot,
 #thetaMPlot,
 #phiMPlot{
-  height:160px;
+  height:170px;
 }
 
 .kvs{
@@ -217,13 +248,12 @@ button:disabled{ opacity:.55; cursor:not-allowed; }
   font-size:13px;
 }
 
-/* Collapsible plot sections */
 .plotDetails,
 .miniDetails{
   margin-top:12px;
   border:1px solid var(--border);
-  border-radius:12px;
-  background:rgba(0,0,0,0.02);
+  border-radius:var(--radiusSm);
+  background:rgba(255,255,255,0.02);
 }
 
 body.light .plotDetails,
@@ -257,10 +287,9 @@ body.light .miniDetails{
   content:"▴";
 }
 
-/* Stream dropdown menu (open/close list) */
 .menu{
   position: relative;
-  min-width: 190px;
+  min-width: 210px;
 }
 
 .menu > summary{
@@ -296,13 +325,34 @@ body.light .miniDetails{
   background: var(--panel);
 }
 
+.menuActions{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
+  margin-bottom:10px;
+}
+
+.menuActions input[type="search"]{
+  width: 220px;
+  max-width: 100%;
+}
+
+.menuHint{
+  color:var(--muted);
+  font-size:12px;
+  font-weight:800;
+  margin-left:auto;
+}
+
 .checks{
   display:grid;
   gap:8px;
 }
 
 .check{
-  display:flex;
+  display:grid;
+  grid-template-columns: 18px 1fr;
   gap:10px;
   align-items:center;
   color:var(--text);
@@ -310,24 +360,37 @@ body.light .miniDetails{
 }
 
 .check input{
-  width:auto;
+  width:18px;
+  height:18px;
   padding:0;
+  margin:0;
+  accent-color: var(--focus);
 }
 
-/* Left plots scroll, right sticky panel */
+.deviceList{
+  display:grid;
+  gap:10px;
+  margin-top:10px;
+}
+
+.deviceList button{
+  width:100%;
+  text-align:left;
+}
+
 .scrollCard{
-  height: calc(100vh - 32px);
+  height: calc(100vh - 114px);
   overflow-y: auto;
+  padding-right: 8px;
 }
 
 .stickyCard{
   position: sticky;
   top: 16px;
-  height: calc(100vh - 32px);
+  height: calc(100vh - 114px);
   overflow-y: auto;
 }
 
-/* hide scrollbars but keep scrolling */
 .scrollCard,
 .stickyCard{
   scrollbar-width: none;
@@ -338,4 +401,20 @@ body.light .miniDetails{
 .stickyCard::-webkit-scrollbar{
   width:0;
   height:0;
+}
+
+@media (max-width: 1100px){
+  .wrap{
+    grid-template-columns: 1fr;
+    height:auto;
+  }
+  .scrollCard,
+  .stickyCard{
+    height:auto;
+    overflow: visible;
+  }
+  .stickyCard{
+    position: relative;
+    top:auto;
+  }
 }

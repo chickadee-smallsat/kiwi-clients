@@ -22,6 +22,7 @@
           </span>
           <span class="pill">devices: <span id="deviceCount">0</span></span>
         </div>
+
         <div class="row">
           <label class="inlineLabel">
             Theme
@@ -33,11 +34,21 @@
         </div>
       </div>
 
-      <div class="deviceList" id="deviceList"></div>
+      <details class="menu" id="deviceMenu" open>
+        <summary>Devices</summary>
+        <div class="menuBody">
+          <div class="menuActions">
+            <input id="deviceSearch" type="search" placeholder="Search device port…" aria-label="Search devices" />
+            <button id="refreshBtn" type="button">Refresh</button>
+          </div>
 
-      <p class="small" style="margin-top:12px;">
-        Click a device to open its live dashboard in a new tab.
-      </p>
+          <div class="deviceList" id="deviceList" role="list"></div>
+
+          <p class="small" style="margin-top:12px;">
+            Click a device to open its live dashboard in a new tab.
+          </p>
+        </div>
+      </details>
     </section>
   </main>
 
