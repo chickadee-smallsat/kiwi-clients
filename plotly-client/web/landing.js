@@ -7,6 +7,9 @@
   const themeSelect = document.getElementById('themeSelect');
   const boardNameEl = document.getElementById('boardName');
 
+  const deviceSearch = document.getElementById('deviceSearch');
+  const refreshBtn = document.getElementById('refreshBtn');
+
   const devices = new Set();
   let reconnects = 0;
 
@@ -52,15 +55,30 @@
     connText.style.color = '#ffb8c0';
   }
 
+  function currentFilter() {
+    if (!deviceSearch) return '';
+    return String(deviceSearch.value || '').trim();
+  }
+
+  function filteredPorts() {
+    const q = currentFilter();
+    const all = Array.from(devices).sort((a, b) => Number(a) - Number(b));
+    if (!q) return all;
+    return all.filter((p) => String(p).includes(q));
+  }
+
   function render() {
     if (deviceCountEl) deviceCountEl.textContent = String(devices.size);
     if (!listEl) return;
 
+    const ports = filteredPorts();
     listEl.innerHTML = '';
-    for (const port of Array.from(devices).sort((a, b) => Number(a) - Number(b))) {
+
+    for (const port of ports) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.textContent = `Open device ${port}`;
+      btn.setAttribute('aria-label', `Open dashboard for device ${port}`);
       btn.addEventListener('click', () => {
         const url = `/dashboard.html?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
         window.open(url, '_blank', 'noopener,noreferrer');
@@ -72,6 +90,15 @@
   function addPorts(ports) {
     for (const p of ports) devices.add(String(p));
     render();
+  }
+
+  function fetchDevicesOnce() {
+    return fetch('/devices')
+      .then((r) => r.json())
+      .then((ports) => {
+        if (Array.isArray(ports)) addPorts(ports);
+      })
+      .catch(() => {});
   }
 
   initTheme();
@@ -89,18 +116,25 @@
     });
   }
 
+  if (deviceSearch) {
+    deviceSearch.addEventListener('input', () => {
+      render();
+    });
+  }
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      fetchDevicesOnce();
+    });
+  }
+
   setConn('warn', 'connecting…');
 
   const es = new EventSource('/devices/events');
 
   es.onopen = () => {
     setConn('ok', 'connected (waiting for devices…)');
-    fetch('/devices')
-      .then((r) => r.json())
-      .then((ports) => {
-        if (Array.isArray(ports)) addPorts(ports);
-      })
-      .catch(() => {});
+    fetchDevicesOnce();
   };
 
   es.onmessage = (e) => {

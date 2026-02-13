@@ -40,6 +40,13 @@
   const phiMDiv = document.getElementById('phiMPlot');
   const dialDiv = document.getElementById('dial');
 
+  const streamChecksEl = document.getElementById('streamChecks');
+  const selectAllBtn = document.getElementById('selectAllBtn');
+  const clearAllBtn = document.getElementById('clearAllBtn');
+  const streamHintEl = document.getElementById('streamHint');
+
+  const plotDetailsEls = Array.from(document.querySelectorAll('details.plotDetails[data-stream]'));
+
   const params = new URLSearchParams(location.search);
   const deviceKey = params.get('src') || 'all';
   const devicePort = deviceKey === 'all' ? null : Number(deviceKey);
@@ -158,7 +165,58 @@
     if (!div) return false;
     const d = div.closest('details');
     if (!d) return true;
+    if (d.style && d.style.display === 'none') return false;
     return !!d.open;
+  }
+
+  function applyStreamHint() {
+    if (!streamHintEl || !streamChecksEl) return;
+    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
+    const selected = checks.filter(c => c.checked).length;
+    if (selected === 0) streamHintEl.textContent = 'None';
+    else if (selected === checks.length) streamHintEl.textContent = 'All';
+    else streamHintEl.textContent = `${selected} selected`;
+  }
+
+  function applyStreamVisibility() {
+    const selected = uiStreams;
+    if (!plotDetailsEls.length) {
+      applyStreamHint();
+      return;
+    }
+
+    plotDetailsEls.forEach(d => {
+      const s = d.getAttribute('data-stream');
+      d.style.display = selected.size === 0 ? 'none' : (selected.has(s) ? '' : 'none');
+    });
+
+    applyStreamHint();
+  }
+
+  function syncSelectFromChecks() {
+    if (!streamSelect || !streamChecksEl) return;
+    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
+    const selected = new Set(checks.filter(c => c.checked).map(c => c.value));
+    Array.from(streamSelect.options).forEach(opt => {
+      opt.selected = selected.has(opt.value);
+    });
+  }
+
+  function syncChecksFromSelect() {
+    if (!streamSelect || !streamChecksEl) return;
+    const selected = new Set(Array.from(streamSelect.selectedOptions || []).map(o => o.value));
+    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
+    checks.forEach(c => (c.checked = selected.has(c.value)));
+  }
+
+  function setAllStreams(v) {
+    if (!streamChecksEl) return;
+    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
+    checks.forEach(c => (c.checked = v));
+    syncSelectFromChecks();
+    uiStreams = getSelectedStreams();
+    uiStream = streamSelect ? streamSelect.value : 'all';
+    applyStreamVisibility();
   }
 
   const THEMES = {
@@ -314,6 +372,7 @@
   }
 
   uiStreams = getSelectedStreams();
+  applyStreamVisibility();
 
   function updateRecorderUI() {
     recCountEl.textContent = String(recorder.rows.length);
@@ -420,7 +479,24 @@
   streamSelect?.addEventListener('change', () => {
     uiStreams = getSelectedStreams();
     uiStream = streamSelect.value;
+    syncChecksFromSelect();
+    applyStreamVisibility();
   });
+
+  if (streamChecksEl) {
+    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
+    checks.forEach(c => {
+      c.addEventListener('change', () => {
+        syncSelectFromChecks();
+        uiStreams = getSelectedStreams();
+        uiStream = streamSelect ? streamSelect.value : 'all';
+        applyStreamVisibility();
+      });
+    });
+  }
+
+  selectAllBtn?.addEventListener('click', () => setAllStreams(true));
+  clearAllBtn?.addEventListener('click', () => setAllStreams(false));
 
   themeSelect?.addEventListener('change', () => {
     const v = themeSelect.value || 'dark';

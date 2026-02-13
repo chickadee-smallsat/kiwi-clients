@@ -14,7 +14,6 @@
   </header>
 
   <main class="wrap">
-    <!-- LEFT: plots (scrollable, scrollbar hidden via CSS additions you already added) -->
     <section class="card scrollCard">
       <div class="row space">
         <div class="row">
@@ -32,10 +31,15 @@
       </div>
 
       <div class="controls">
-        <!-- Stream menu: open/close + multi-select checkboxes -->
         <details class="menu" id="streamMenu">
           <summary>Streams</summary>
           <div class="menuBody">
+            <div class="menuActions">
+              <button id="selectAllBtn" type="button">Select all</button>
+              <button id="clearAllBtn" type="button">Clear</button>
+              <span class="menuHint" id="streamHint">All</span>
+            </div>
+
             <div id="streamChecks" class="checks">
               <label class="check"><input type="checkbox" value="accel" checked /> Accelerometer</label>
               <label class="check"><input type="checkbox" value="gyro" checked /> Gyroscope</label>
@@ -45,7 +49,6 @@
               <label class="check"><input type="checkbox" value="altitude" checked /> Altitude</label>
             </div>
 
-            <!-- hidden select kept for compatibility with existing JS -->
             <select id="streamSelect" multiple style="display:none">
               <option value="accel" selected>accel</option>
               <option value="gyro" selected>gyro</option>
@@ -84,39 +87,37 @@
         </label>
       </div>
 
-      <!-- Plots (collapsible) -->
-      <details class="plotDetails" open>
+      <details class="plotDetails" open data-stream="accel">
         <summary>Accelerometer (X, Y, Z)</summary>
         <div class="plotWrap"><div id="accelPlot"></div></div>
       </details>
 
-      <details class="plotDetails" open>
+      <details class="plotDetails" open data-stream="gyro">
         <summary>Gyroscope (X, Y, Z)</summary>
         <div class="plotWrap"><div id="gyroPlot"></div></div>
       </details>
 
-      <details class="plotDetails" open>
+      <details class="plotDetails" open data-stream="mag">
         <summary>Magnetometer (X, Y, Z)</summary>
         <div class="plotWrap"><div id="magPlot"></div></div>
       </details>
 
-      <details class="plotDetails" open>
+      <details class="plotDetails" open data-stream="temp">
         <summary>Temperature</summary>
         <div class="plotWrap"><div id="tempPlot"></div></div>
       </details>
 
-      <details class="plotDetails" open>
+      <details class="plotDetails" open data-stream="pressure">
         <summary>Pressure</summary>
         <div class="plotWrap"><div id="pressurePlot"></div></div>
       </details>
 
-      <details class="plotDetails" open>
+      <details class="plotDetails" open data-stream="altitude">
         <summary>Altitude</summary>
         <div class="plotWrap"><div id="altitudePlot"></div></div>
       </details>
     </section>
 
-    <!-- RIGHT: dial + direction plots + recording + optional live stats (sticky, scrollbar hidden via CSS additions) -->
     <section class="card stickyCard">
       <label class="subLabel">Direction Dial (XY Projection)</label>
       <div id="dial"></div>
