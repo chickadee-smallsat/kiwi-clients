@@ -119,29 +119,26 @@
     </section>
 
     <section class="card stickyCard">
-      <label class="subLabel">Direction Dial (XY Projection)</label>
-      <div id="dial"></div>
-
-      <div class="plotWrap" style="margin-top:12px;">
-        <label class="subLabel">Directionality Plots</label>
-
-        <details class="plotDetails" open>
-          <summary>Theta from gravity</summary>
-          <div class="plotWrap"><div id="thetaGPlot"></div></div>
-        </details>
-
-        <details class="plotDetails" open>
-          <summary>Theta from magnetic field</summary>
-          <div class="plotWrap"><div id="thetaMPlot"></div></div>
-        </details>
-
-        <details class="plotDetails" open>
-          <summary>Phi from magnetic field</summary>
-          <div class="plotWrap"><div id="phiMPlot"></div></div>
-        </details>
+      <div class="btnRow" style="margin-bottom: 10px;">
+        <button id="recordBtn" type="button">Start Recording</button>
+        <button id="stopBtn" type="button" disabled>Stop</button>
+        <button id="exportBtn" type="button" disabled>Export Excel</button>
+        <button id="open3dBtn" type="button">Open 3D View</button>
       </div>
 
-      <details class="miniDetails" id="dialStats">
+      <div id="imu3dWrap" style="width:100%; height:min(520px,55vh); border-radius:12px; overflow:hidden;">
+        <iframe
+          id="imu3dFrame"
+          title="3D IMU View"
+          src="/3d/?embed=1"
+          style="width:100%; height:100%; border:0; display:block;"
+          loading="lazy"
+          referrerpolicy="no-referrer"
+          allow="fullscreen"
+        ></iframe>
+      </div>
+
+      <details class="miniDetails" id="dialStats" style="margin-top: 10px;">
         <summary>Show live values</summary>
         <div class="kvs">
           <div class="kv"><span>time</span><span class="mono" id="t">-</span></div>
@@ -154,12 +151,6 @@
           <div class="kv"><span>recorded samples</span><span class="mono" id="recCount">0</span></div>
         </div>
       </details>
-
-      <div class="btnRow">
-        <button id="recordBtn" type="button">Start Recording</button>
-        <button id="stopBtn" type="button" disabled>Stop</button>
-        <button id="exportBtn" type="button" disabled>Export Excel</button>
-      </div>
 
       <p class="small">
         Excel export stores raw incoming values only. Sheets:

@@ -35,10 +35,6 @@
   const tempDiv = document.getElementById('tempPlot');
   const pressureDiv = document.getElementById('pressurePlot');
   const altitudeDiv = document.getElementById('altitudePlot');
-  const thetaGDiv = document.getElementById('thetaGPlot');
-  const thetaMDiv = document.getElementById('thetaMPlot');
-  const phiMDiv = document.getElementById('phiMPlot');
-  const dialDiv = document.getElementById('dial');
 
   const streamChecksEl = document.getElementById('streamChecks');
   const selectAllBtn = document.getElementById('selectAllBtn');
@@ -46,6 +42,9 @@
   const streamHintEl = document.getElementById('streamHint');
 
   const plotDetailsEls = Array.from(document.querySelectorAll('details.plotDetails[data-stream]'));
+
+  const open3dBtn = document.getElementById('open3dBtn');
+  const imu3dFrame = document.getElementById('imu3dFrame');
 
   const params = new URLSearchParams(location.search);
   const deviceKey = params.get('src') || 'all';
@@ -96,6 +95,7 @@
   }
 
   function setConn(state, text) {
+    if (!connText || !connDot || !connPill) return;
     connText.textContent = text;
     const ok = getCss('--ok');
     const warn = getCss('--warn');
@@ -125,7 +125,7 @@
 
   function updateLastSeen() {
     lastSeenMs = Date.now();
-    lastSeenEl.textContent = fmtTime(lastSeenMs);
+    if (lastSeenEl) lastSeenEl.textContent = fmtTime(lastSeenMs);
   }
 
   setInterval(() => {
@@ -144,7 +144,7 @@
     if (windowInput) windowInput.value = String(windowSec);
     if (rateInput) rateInput.value = String(rateHz);
     maxPoints = Math.max(1, Math.round(windowSec * rateHz));
-    bufMaxEl.textContent = String(maxPoints);
+    if (bufMaxEl) bufMaxEl.textContent = String(maxPoints);
   }
 
   function getSelectedStreams() {
@@ -248,7 +248,7 @@
 
   function applyThemeToPlots(theme) {
     const t = THEMES[theme] || THEMES.dark;
-    const divs = [accelDiv, gyroDiv, magDiv, tempDiv, pressureDiv, altitudeDiv, thetaGDiv, thetaMDiv, phiMDiv];
+    const divs = [accelDiv, gyroDiv, magDiv, tempDiv, pressureDiv, altitudeDiv];
     for (const div of divs) {
       if (!div) continue;
       Plotly.relayout(div, {
@@ -259,10 +259,6 @@
         yaxis: { ...(t.yaxis || {}) },
       });
     }
-    Plotly.relayout(dialDiv, {
-      paper_bgcolor: t.paper_bgcolor,
-      plot_bgcolor: t.plot_bgcolor,
-    });
   }
 
   function applyPaletteToPlots(paletteKey) {
@@ -288,9 +284,6 @@
     applyScalar(tempDiv, colors[0]);
     applyScalar(pressureDiv, colors[1]);
     applyScalar(altitudeDiv, colors[2]);
-    applyScalar(thetaGDiv, colors[3]);
-    applyScalar(thetaMDiv, colors[4] || colors[0]);
-    applyScalar(phiMDiv, colors[5] || colors[1]);
   }
 
   function initThemeAndPalette() {
@@ -335,36 +328,12 @@
     Plotly.newPlot(div, traces, layout, config);
   }
 
-  function initDial() {
-    const traces = [{ name: 'dir', mode: 'lines+markers', x: [0, 1], y: [0, 0] }];
-    const layout = {
-      margin: { l: 20, r: 20, t: 10, b: 20 },
-      paper_bgcolor: 'rgba(0,0,0,0)',
-      plot_bgcolor: 'rgba(0,0,0,0)',
-      xaxis: { range: [-1.2, 1.2], showgrid: true, zeroline: true, scaleanchor: 'y', tickfont: { size: 12 } },
-      yaxis: { range: [-1.2, 1.2], showgrid: true, zeroline: true, tickfont: { size: 12 } },
-      showlegend: false,
-    };
-    Plotly.newPlot(dialDiv, traces, layout, config);
-  }
-
-  function renderDial(phi_deg) {
-    const a = (phi_deg - 90) * (Math.PI / 180);
-    const x = Math.cos(a);
-    const y = Math.sin(a);
-    Plotly.restyle(dialDiv, { x: [[0, x]], y: [[0, y]] }, [0]);
-  }
-
-  initVectorPlot(accelDiv, 'accel');
-  initVectorPlot(gyroDiv, 'gyro');
-  initVectorPlot(magDiv, 'mag');
-  initScalarPlot(tempDiv, 'temp');
-  initScalarPlot(pressureDiv, 'pressure');
-  initScalarPlot(altitudeDiv, 'altitude');
-  initScalarPlot(thetaGDiv, 'theta (gravity)');
-  initScalarPlot(thetaMDiv, 'theta (mag)');
-  initScalarPlot(phiMDiv, 'phi (mag)');
-  initDial();
+  if (accelDiv) initVectorPlot(accelDiv, 'accel');
+  if (gyroDiv) initVectorPlot(gyroDiv, 'gyro');
+  if (magDiv) initVectorPlot(magDiv, 'mag');
+  if (tempDiv) initScalarPlot(tempDiv, 'temp');
+  if (pressureDiv) initScalarPlot(pressureDiv, 'pressure');
+  if (altitudeDiv) initScalarPlot(altitudeDiv, 'altitude');
 
   if (boardNameEl && board) {
     boardNameEl.textContent = board;
@@ -375,10 +344,10 @@
   applyStreamVisibility();
 
   function updateRecorderUI() {
-    recCountEl.textContent = String(recorder.rows.length);
-    recordBtn.disabled = recorder.isRecording;
-    stopBtn.disabled = !recorder.isRecording;
-    exportBtn.disabled = recorder.rows.length === 0;
+    if (recCountEl) recCountEl.textContent = String(recorder.rows.length);
+    if (recordBtn) recordBtn.disabled = recorder.isRecording;
+    if (stopBtn) stopBtn.disabled = !recorder.isRecording;
+    if (exportBtn) exportBtn.disabled = recorder.rows.length === 0;
   }
 
   function recordRow(item) {
@@ -394,18 +363,18 @@
 
   function updateValuePanel(item) {
     if (!isVectorSensor(item.sensor)) return;
-    tEl.textContent = fmtTime(item.ts_ms);
-    xEl.textContent = item.x.toFixed(3);
-    yEl.textContent = item.y.toFixed(3);
-    zEl.textContent = item.z.toFixed(3);
-    magEl.textContent = item.mag.toFixed(3);
-    thetaEl.textContent = item.theta_deg.toFixed(1);
-    phiEl.textContent = item.phi_deg.toFixed(1);
+    if (tEl) tEl.textContent = fmtTime(item.ts_ms);
+    if (xEl) xEl.textContent = item.x.toFixed(3);
+    if (yEl) yEl.textContent = item.y.toFixed(3);
+    if (zEl) zEl.textContent = item.z.toFixed(3);
+    if (magEl) magEl.textContent = item.mag.toFixed(3);
+    if (thetaEl) thetaEl.textContent = item.theta_deg.toFixed(1);
+    if (phiEl) phiEl.textContent = item.phi_deg.toFixed(1);
   }
 
   function handleItem(item) {
     bufferedPoints = Math.min(bufferedPoints + 1, maxPoints);
-    bufCountEl.textContent = String(bufferedPoints);
+    if (bufCountEl) bufCountEl.textContent = String(bufferedPoints);
 
     if (recorder.isRecording) {
       recordRow(item);
@@ -460,9 +429,17 @@
     return `${Y}${M}${D}_${h}${m}${s}`;
   }
 
+  function sync3DFrame() {
+    if (!imu3dFrame) return;
+    const src = devicePort ? String(devicePort) : 'all';
+    const next = `/3d/?src=${encodeURIComponent(src)}&embed=1`;
+    if (imu3dFrame.getAttribute('src') !== next) imu3dFrame.setAttribute('src', next);
+  }
+
   applySettings();
   updateRecorderUI();
   initThemeAndPalette();
+  sync3DFrame();
 
   windowInput?.addEventListener('change', () => {
     applySettings();
@@ -573,11 +550,16 @@
     XLSX.writeFile(wb, filename);
   });
 
+  open3dBtn?.addEventListener('click', () => {
+    const src = devicePort ? String(devicePort) : 'all';
+    window.open(`/3d/?src=${encodeURIComponent(src)}`, '_blank');
+  });
+
   setConn('warn', 'connecting…');
-  reconnectsEl.textContent = '0';
-  lastSeenEl.textContent = '-';
-  bufMaxEl.textContent = String(maxPoints);
-  bufCountEl.textContent = '0';
+  if (reconnectsEl) reconnectsEl.textContent = '0';
+  if (lastSeenEl) lastSeenEl.textContent = '-';
+  if (bufMaxEl) bufMaxEl.textContent = String(maxPoints);
+  if (bufCountEl) bufCountEl.textContent = '0';
 
   const workerSrc = `
     function normalizeTimestampToMs(t) {
@@ -639,14 +621,16 @@
     }
 
     function unpackSerde(raw) {
-      if (!raw || !raw.measurement || typeof raw.timestamp !== 'number') return null;
+      if (!raw || !raw.measurement) return null;
+
+      const ts = Number(raw.timestamp);
+      if (!Number.isFinite(ts)) return null;
 
       const keys = Object.keys(raw.measurement);
       if (keys.length !== 1) return null;
 
       const variant = keys[0];
       const values = raw.measurement[variant];
-      const ts = raw.timestamp;
 
       if (Array.isArray(values) && values.length === 3 && variant !== 'Baro') {
         return { sensor: variant.toLowerCase(), x: values[0], y: values[1], z: values[2], ts };
@@ -711,81 +695,108 @@
 
   es.onerror = () => {
     reconnects += 1;
-    reconnectsEl.textContent = String(reconnects);
+    if (reconnectsEl) reconnectsEl.textContent = String(reconnects);
     setConn('bad', 'disconnected (auto-retrying…)');
   };
 
+  function clearAccelDraw() {
+    draw.accel.ts.length = 0;
+    draw.accel.x.length = 0;
+    draw.accel.y.length = 0;
+    draw.accel.z.length = 0;
+    draw.accel.mag.length = 0;
+    draw.accel.theta.length = 0;
+  }
+
+  function clearGyroDraw() {
+    draw.gyro.ts.length = 0;
+    draw.gyro.x.length = 0;
+    draw.gyro.y.length = 0;
+    draw.gyro.z.length = 0;
+    draw.gyro.mag.length = 0;
+  }
+
+  function clearMagDraw() {
+    draw.mag.ts.length = 0;
+    draw.mag.x.length = 0;
+    draw.mag.y.length = 0;
+    draw.mag.z.length = 0;
+    draw.mag.mag.length = 0;
+    draw.mag.theta.length = 0;
+    draw.mag.phi.length = 0;
+  }
+
+  function clearTempDraw() {
+    draw.temp.ts.length = 0;
+    draw.temp.v.length = 0;
+  }
+
+  function clearPressureDraw() {
+    draw.pressure.ts.length = 0;
+    draw.pressure.v.length = 0;
+  }
+
+  function clearAltitudeDraw() {
+    draw.altitude.ts.length = 0;
+    draw.altitude.v.length = 0;
+  }
+
   function flush() {
-    if (draw.accel.ts.length) {
+    if (accelDiv && draw.accel.ts.length) {
       Plotly.extendTraces(
         accelDiv,
         { x: [draw.accel.ts, draw.accel.ts, draw.accel.ts, draw.accel.ts], y: [draw.accel.x, draw.accel.y, draw.accel.z, draw.accel.mag] },
         [0, 1, 2, 3],
         maxPoints
       );
-      if (thetaGDiv && plotVisible(thetaGDiv)) {
-        Plotly.extendTraces(thetaGDiv, { x: [draw.accel.ts], y: [draw.accel.theta] }, [0], maxPoints);
-      }
-      draw.accel.ts.length = 0;
-      draw.accel.x.length = 0;
-      draw.accel.y.length = 0;
-      draw.accel.z.length = 0;
-      draw.accel.mag.length = 0;
-      draw.accel.theta.length = 0;
+      clearAccelDraw();
+    } else if (!accelDiv) {
+      clearAccelDraw();
     }
 
-    if (draw.gyro.ts.length) {
+    if (gyroDiv && draw.gyro.ts.length) {
       Plotly.extendTraces(
         gyroDiv,
         { x: [draw.gyro.ts, draw.gyro.ts, draw.gyro.ts, draw.gyro.ts], y: [draw.gyro.x, draw.gyro.y, draw.gyro.z, draw.gyro.mag] },
         [0, 1, 2, 3],
         maxPoints
       );
-      draw.gyro.ts.length = 0;
-      draw.gyro.x.length = 0;
-      draw.gyro.y.length = 0;
-      draw.gyro.z.length = 0;
-      draw.gyro.mag.length = 0;
+      clearGyroDraw();
+    } else if (!gyroDiv) {
+      clearGyroDraw();
     }
 
-    if (draw.mag.ts.length) {
+    if (magDiv && draw.mag.ts.length) {
       Plotly.extendTraces(
         magDiv,
         { x: [draw.mag.ts, draw.mag.ts, draw.mag.ts, draw.mag.ts], y: [draw.mag.x, draw.mag.y, draw.mag.z, draw.mag.mag] },
         [0, 1, 2, 3],
         maxPoints
       );
-      if (thetaMDiv && plotVisible(thetaMDiv)) {
-        Plotly.extendTraces(thetaMDiv, { x: [draw.mag.ts], y: [draw.mag.theta] }, [0], maxPoints);
-      }
-      if (phiMDiv && plotVisible(phiMDiv)) {
-        Plotly.extendTraces(phiMDiv, { x: [draw.mag.ts], y: [draw.mag.phi] }, [0], maxPoints);
-      }
-      draw.mag.ts.length = 0;
-      draw.mag.x.length = 0;
-      draw.mag.y.length = 0;
-      draw.mag.z.length = 0;
-      draw.mag.mag.length = 0;
-      draw.mag.theta.length = 0;
-      draw.mag.phi.length = 0;
+      clearMagDraw();
+    } else if (!magDiv) {
+      clearMagDraw();
     }
 
-    if (draw.temp.ts.length) {
+    if (tempDiv && draw.temp.ts.length) {
       Plotly.extendTraces(tempDiv, { x: [draw.temp.ts], y: [draw.temp.v] }, [0], maxPoints);
-      draw.temp.ts.length = 0;
-      draw.temp.v.length = 0;
+      clearTempDraw();
+    } else if (!tempDiv) {
+      clearTempDraw();
     }
 
-    if (draw.pressure.ts.length) {
+    if (pressureDiv && draw.pressure.ts.length) {
       Plotly.extendTraces(pressureDiv, { x: [draw.pressure.ts], y: [draw.pressure.v] }, [0], maxPoints);
-      draw.pressure.ts.length = 0;
-      draw.pressure.v.length = 0;
+      clearPressureDraw();
+    } else if (!pressureDiv) {
+      clearPressureDraw();
     }
 
-    if (draw.altitude.ts.length) {
+    if (altitudeDiv && draw.altitude.ts.length) {
       Plotly.extendTraces(altitudeDiv, { x: [draw.altitude.ts], y: [draw.altitude.v] }, [0], maxPoints);
-      draw.altitude.ts.length = 0;
-      draw.altitude.v.length = 0;
+      clearAltitudeDraw();
+    } else if (!altitudeDiv) {
+      clearAltitudeDraw();
     }
   }
 
@@ -807,10 +818,7 @@
 
         flush();
 
-        if (lastVector) {
-          updateValuePanel(lastVector);
-          renderDial(lastVector.phi_deg);
-        }
+        if (lastVector) updateValuePanel(lastVector);
 
         if (recorder.isRecording && batch.length) updateRecorderUI();
 
