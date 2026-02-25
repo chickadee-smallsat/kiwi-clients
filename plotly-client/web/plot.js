@@ -12,6 +12,10 @@
   const rateInput = document.getElementById('rateHz');
   const streamSelect = document.getElementById('streamSelect');
 
+  const themeSelect = document.getElementById('themeSelect');
+  const paletteSelect = document.getElementById('paletteSelect');
+  const boardNameEl = document.getElementById('boardName');
+
   const recordBtn = document.getElementById('recordBtn');
   const stopBtn = document.getElementById('stopBtn');
   const exportBtn = document.getElementById('exportBtn');
@@ -31,11 +35,21 @@
   const tempDiv = document.getElementById('tempPlot');
   const pressureDiv = document.getElementById('pressurePlot');
   const altitudeDiv = document.getElementById('altitudePlot');
-  const dialDiv = document.getElementById('dial');
+
+  const streamChecksEl = document.getElementById('streamChecks');
+  const selectAllBtn = document.getElementById('selectAllBtn');
+  const clearAllBtn = document.getElementById('clearAllBtn');
+  const streamHintEl = document.getElementById('streamHint');
+
+  const plotDetailsEls = Array.from(document.querySelectorAll('details.plotDetails[data-stream]'));
+
+  const open3dBtn = document.getElementById('open3dBtn');
+  const imu3dFrame = document.getElementById('imu3dFrame');
 
   const params = new URLSearchParams(location.search);
   const deviceKey = params.get('src') || 'all';
   const devicePort = deviceKey === 'all' ? null : Number(deviceKey);
+  const board = params.get('board');
 
   let paused = false;
   let reconnects = 0;
@@ -53,10 +67,23 @@
   };
 
   let uiStream = streamSelect ? streamSelect.value : 'all';
+  let uiStreams = new Set();
 
-  const FRAME_MS = 50;
+  const FRAME_MS = 33;
   let pending = [];
   let lastFrameMs = 0;
+
+  const draw = {
+    accel: { ts: [], x: [], y: [], z: [], mag: [], theta: [] },
+    gyro: { ts: [], x: [], y: [], z: [], mag: [] },
+    mag: { ts: [], x: [], y: [], z: [], mag: [], theta: [], phi: [] },
+    temp: { ts: [], v: [] },
+    pressure: { ts: [], v: [] },
+    altitude: { ts: [], v: [] },
+  };
+
+  const dialStats = document.getElementById('dialStats');
+  if (dialStats) dialStats.open = false;
 
   function toInt(v, fallback) {
     const n = Number(v);
@@ -68,6 +95,7 @@
   }
 
   function setConn(state, text) {
+    if (!connText || !connDot || !connPill) return;
     connText.textContent = text;
     const ok = getCss('--ok');
     const warn = getCss('--warn');
@@ -97,7 +125,7 @@
 
   function updateLastSeen() {
     lastSeenMs = Date.now();
-    lastSeenEl.textContent = fmtTime(lastSeenMs);
+    if (lastSeenEl) lastSeenEl.textContent = fmtTime(lastSeenMs);
   }
 
   setInterval(() => {
@@ -116,17 +144,167 @@
     if (windowInput) windowInput.value = String(windowSec);
     if (rateInput) rateInput.value = String(rateHz);
     maxPoints = Math.max(1, Math.round(windowSec * rateHz));
-    bufMaxEl.textContent = String(maxPoints);
+    if (bufMaxEl) bufMaxEl.textContent = String(maxPoints);
+  }
+
+  function getSelectedStreams() {
+    const set = new Set();
+    if (!streamSelect) return set;
+    for (const opt of Array.from(streamSelect.selectedOptions || [])) {
+      if (opt && opt.value) set.add(opt.value);
+    }
+    return set;
+  }
+
+  function shouldDraw(sensor) {
+    if (uiStreams.size) return uiStreams.has(sensor);
+    return uiStream === 'all' || uiStream === sensor;
+  }
+
+  function plotVisible(div) {
+    if (!div) return false;
+    const d = div.closest('details');
+    if (!d) return true;
+    if (d.style && d.style.display === 'none') return false;
+    return !!d.open;
+  }
+
+  function applyStreamHint() {
+    if (!streamHintEl || !streamChecksEl) return;
+    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
+    const selected = checks.filter(c => c.checked).length;
+    if (selected === 0) streamHintEl.textContent = 'None';
+    else if (selected === checks.length) streamHintEl.textContent = 'All';
+    else streamHintEl.textContent = `${selected} selected`;
+  }
+
+  function applyStreamVisibility() {
+    const selected = uiStreams;
+    if (!plotDetailsEls.length) {
+      applyStreamHint();
+      return;
+    }
+
+    plotDetailsEls.forEach(d => {
+      const s = d.getAttribute('data-stream');
+      d.style.display = selected.size === 0 ? 'none' : (selected.has(s) ? '' : 'none');
+    });
+
+    applyStreamHint();
+  }
+
+  function syncSelectFromChecks() {
+    if (!streamSelect || !streamChecksEl) return;
+    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
+    const selected = new Set(checks.filter(c => c.checked).map(c => c.value));
+    Array.from(streamSelect.options).forEach(opt => {
+      opt.selected = selected.has(opt.value);
+    });
+  }
+
+  function syncChecksFromSelect() {
+    if (!streamSelect || !streamChecksEl) return;
+    const selected = new Set(Array.from(streamSelect.selectedOptions || []).map(o => o.value));
+    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
+    checks.forEach(c => (c.checked = selected.has(c.value)));
+  }
+
+  function setAllStreams(v) {
+    if (!streamChecksEl) return;
+    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
+    checks.forEach(c => (c.checked = v));
+    syncSelectFromChecks();
+    uiStreams = getSelectedStreams();
+    uiStream = streamSelect ? streamSelect.value : 'all';
+    applyStreamVisibility();
+  }
+
+  const THEMES = {
+    dark: {
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      font: { color: '#e8eefc' },
+      xaxis: { gridcolor: 'rgba(255,255,255,0.12)' },
+      yaxis: { gridcolor: 'rgba(255,255,255,0.12)' },
+    },
+    light: {
+      paper_bgcolor: '#ffffff',
+      plot_bgcolor: '#ffffff',
+      font: { color: '#0b1220' },
+      xaxis: { gridcolor: 'rgba(0,0,0,0.12)' },
+      yaxis: { gridcolor: 'rgba(0,0,0,0.12)' },
+    },
+  };
+
+  const PALETTES = {
+    default: ['#7aa2ff', '#7dffcb', '#ffb86c', '#ff6b81', '#c792ea', '#ffd166'],
+    colorblind: ['#0072B2', '#E69F00', '#009E73', '#D55E00', '#CC79A7', '#56B4E9'],
+  };
+
+  function applyTheme(theme) {
+    document.body.classList.toggle('light', theme === 'light');
+    document.body.classList.toggle('dark', theme !== 'light');
+  }
+
+  function applyThemeToPlots(theme) {
+    const t = THEMES[theme] || THEMES.dark;
+    const divs = [accelDiv, gyroDiv, magDiv, tempDiv, pressureDiv, altitudeDiv];
+    for (const div of divs) {
+      if (!div) continue;
+      Plotly.relayout(div, {
+        paper_bgcolor: t.paper_bgcolor,
+        plot_bgcolor: t.plot_bgcolor,
+        font: t.font,
+        xaxis: { ...(t.xaxis || {}) },
+        yaxis: { ...(t.yaxis || {}) },
+      });
+    }
+  }
+
+  function applyPaletteToPlots(paletteKey) {
+    const colors = PALETTES[paletteKey] || PALETTES.default;
+
+    function applyVector(div) {
+      if (!div) return;
+      Plotly.restyle(
+        div,
+        { line: [{ color: colors[0] }, { color: colors[1] }, { color: colors[2] }, { color: colors[3] }] },
+        [0, 1, 2, 3]
+      );
+    }
+
+    function applyScalar(div, color) {
+      if (!div) return;
+      Plotly.restyle(div, { line: { color } }, [0]);
+    }
+
+    applyVector(accelDiv);
+    applyVector(gyroDiv);
+    applyVector(magDiv);
+    applyScalar(tempDiv, colors[0]);
+    applyScalar(pressureDiv, colors[1]);
+    applyScalar(altitudeDiv, colors[2]);
+  }
+
+  function initThemeAndPalette() {
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    const savedPalette = localStorage.getItem('palette') || 'default';
+    if (themeSelect) themeSelect.value = savedTheme;
+    if (paletteSelect) paletteSelect.value = savedPalette;
+    applyTheme(savedTheme);
+    applyThemeToPlots(savedTheme);
+    applyPaletteToPlots(savedPalette);
   }
 
   const baseLayout = {
-    margin: { l: 40, r: 10, t: 10, b: 30 },
+    margin: { l: 52, r: 12, t: 16, b: 40 },
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
-    xaxis: { title: '', showgrid: true, zeroline: false },
-    yaxis: { title: '', showgrid: true, zeroline: false },
+    xaxis: { title: '', showgrid: true, zeroline: false, tickfont: { size: 13 }, titlefont: { size: 14 } },
+    yaxis: { title: '', showgrid: true, zeroline: false, tickfont: { size: 13 }, titlefont: { size: 14 } },
     showlegend: true,
-    legend: { orientation: 'h' },
+    legend: { orientation: 'h', font: { size: 13 } },
+    font: { size: 14 },
   };
 
   const config = { displayModeBar: false, responsive: true };
@@ -150,52 +328,26 @@
     Plotly.newPlot(div, traces, layout, config);
   }
 
-  function initDial() {
-    const traces = [{ name: 'dir', mode: 'lines+markers', x: [0, 1], y: [0, 0] }];
-    const layout = {
-      margin: { l: 20, r: 20, t: 10, b: 20 },
-      paper_bgcolor: 'rgba(0,0,0,0)',
-      plot_bgcolor: 'rgba(0,0,0,0)',
-      xaxis: { range: [-1.2, 1.2], showgrid: true, zeroline: true, scaleanchor: 'y' },
-      yaxis: { range: [-1.2, 1.2], showgrid: true, zeroline: true },
-      showlegend: false,
-    };
-    Plotly.newPlot(dialDiv, traces, layout, config);
+  if (accelDiv) initVectorPlot(accelDiv, 'accel');
+  if (gyroDiv) initVectorPlot(gyroDiv, 'gyro');
+  if (magDiv) initVectorPlot(magDiv, 'mag');
+  if (tempDiv) initScalarPlot(tempDiv, 'temp');
+  if (pressureDiv) initScalarPlot(pressureDiv, 'pressure');
+  if (altitudeDiv) initScalarPlot(altitudeDiv, 'altitude');
+
+  if (boardNameEl && board) {
+    boardNameEl.textContent = board;
+    document.title = board;
   }
 
-  function extendVector(div, ts, x, y, z, mag) {
-    Plotly.extendTraces(
-      div,
-      { x: [[ts], [ts], [ts], [ts]], y: [[x], [y], [z], [mag]] },
-      [0, 1, 2, 3],
-      maxPoints
-    );
-  }
-
-  function extendScalar(div, ts, v) {
-    Plotly.extendTraces(div, { x: [[ts]], y: [[v]] }, [0], maxPoints);
-  }
-
-  function renderDial(phi_deg) {
-    const a = (phi_deg - 90) * (Math.PI / 180);
-    const x = Math.cos(a);
-    const y = Math.sin(a);
-    Plotly.restyle(dialDiv, { x: [[0, x]], y: [[0, y]] }, [0]);
-  }
-
-  initVectorPlot(accelDiv, 'accel');
-  initVectorPlot(gyroDiv, 'gyro');
-  initVectorPlot(magDiv, 'mag');
-  initScalarPlot(tempDiv, 'temp');
-  initScalarPlot(pressureDiv, 'pressure');
-  initScalarPlot(altitudeDiv, 'altitude');
-  initDial();
+  uiStreams = getSelectedStreams();
+  applyStreamVisibility();
 
   function updateRecorderUI() {
-    recCountEl.textContent = String(recorder.rows.length);
-    recordBtn.disabled = recorder.isRecording;
-    stopBtn.disabled = !recorder.isRecording;
-    exportBtn.disabled = recorder.rows.length === 0;
+    if (recCountEl) recCountEl.textContent = String(recorder.rows.length);
+    if (recordBtn) recordBtn.disabled = recorder.isRecording;
+    if (stopBtn) stopBtn.disabled = !recorder.isRecording;
+    if (exportBtn) exportBtn.disabled = recorder.rows.length === 0;
   }
 
   function recordRow(item) {
@@ -205,31 +357,24 @@
       x: item.x,
       y: item.y,
       z: item.z,
-      mag: item.mag,
-      theta_deg: item.theta_deg,
-      phi_deg: item.phi_deg,
       value: item.value,
     });
   }
 
-  function shouldDraw(sensor) {
-    return uiStream === 'all' || uiStream === sensor;
-  }
-
   function updateValuePanel(item) {
     if (!isVectorSensor(item.sensor)) return;
-    tEl.textContent = fmtTime(item.ts_ms);
-    xEl.textContent = item.x.toFixed(3);
-    yEl.textContent = item.y.toFixed(3);
-    zEl.textContent = item.z.toFixed(3);
-    magEl.textContent = item.mag.toFixed(3);
-    thetaEl.textContent = item.theta_deg.toFixed(1);
-    phiEl.textContent = item.phi_deg.toFixed(1);
+    if (tEl) tEl.textContent = fmtTime(item.ts_ms);
+    if (xEl) xEl.textContent = item.x.toFixed(3);
+    if (yEl) yEl.textContent = item.y.toFixed(3);
+    if (zEl) zEl.textContent = item.z.toFixed(3);
+    if (magEl) magEl.textContent = item.mag.toFixed(3);
+    if (thetaEl) thetaEl.textContent = item.theta_deg.toFixed(1);
+    if (phiEl) phiEl.textContent = item.phi_deg.toFixed(1);
   }
 
   function handleItem(item) {
     bufferedPoints = Math.min(bufferedPoints + 1, maxPoints);
-    bufCountEl.textContent = String(bufferedPoints);
+    if (bufCountEl) bufCountEl.textContent = String(bufferedPoints);
 
     if (recorder.isRecording) {
       recordRow(item);
@@ -239,18 +384,36 @@
 
     const ts = item.ts_ms;
 
-    if (item.sensor === 'accel' && shouldDraw('accel')) {
-      extendVector(accelDiv, ts, item.x, item.y, item.z, item.mag);
-    } else if (item.sensor === 'gyro' && shouldDraw('gyro')) {
-      extendVector(gyroDiv, ts, item.x, item.y, item.z, item.mag);
-    } else if (item.sensor === 'mag' && shouldDraw('mag')) {
-      extendVector(magDiv, ts, item.x, item.y, item.z, item.mag);
-    } else if (item.sensor === 'temp' && shouldDraw('temp')) {
-      extendScalar(tempDiv, ts, item.value);
-    } else if (item.sensor === 'pressure' && shouldDraw('pressure')) {
-      extendScalar(pressureDiv, ts, item.value);
-    } else if (item.sensor === 'altitude' && shouldDraw('altitude')) {
-      extendScalar(altitudeDiv, ts, item.value);
+    if (item.sensor === 'accel' && shouldDraw('accel') && plotVisible(accelDiv)) {
+      draw.accel.ts.push(ts);
+      draw.accel.x.push(item.x);
+      draw.accel.y.push(item.y);
+      draw.accel.z.push(item.z);
+      draw.accel.mag.push(item.mag);
+      draw.accel.theta.push(item.theta_deg);
+    } else if (item.sensor === 'gyro' && shouldDraw('gyro') && plotVisible(gyroDiv)) {
+      draw.gyro.ts.push(ts);
+      draw.gyro.x.push(item.x);
+      draw.gyro.y.push(item.y);
+      draw.gyro.z.push(item.z);
+      draw.gyro.mag.push(item.mag);
+    } else if (item.sensor === 'mag' && shouldDraw('mag') && plotVisible(magDiv)) {
+      draw.mag.ts.push(ts);
+      draw.mag.x.push(item.x);
+      draw.mag.y.push(item.y);
+      draw.mag.z.push(item.z);
+      draw.mag.mag.push(item.mag);
+      draw.mag.theta.push(item.theta_deg);
+      draw.mag.phi.push(item.phi_deg);
+    } else if (item.sensor === 'temp' && shouldDraw('temp') && plotVisible(tempDiv)) {
+      draw.temp.ts.push(ts);
+      draw.temp.v.push(item.value);
+    } else if (item.sensor === 'pressure' && shouldDraw('pressure') && plotVisible(pressureDiv)) {
+      draw.pressure.ts.push(ts);
+      draw.pressure.v.push(item.value);
+    } else if (item.sensor === 'altitude' && shouldDraw('altitude') && plotVisible(altitudeDiv)) {
+      draw.altitude.ts.push(ts);
+      draw.altitude.v.push(item.value);
     }
   }
 
@@ -266,8 +429,17 @@
     return `${Y}${M}${D}_${h}${m}${s}`;
   }
 
+  function sync3DFrame() {
+    if (!imu3dFrame) return;
+    const src = devicePort ? String(devicePort) : 'all';
+    const next = `/3d/?src=${encodeURIComponent(src)}&embed=1`;
+    if (imu3dFrame.getAttribute('src') !== next) imu3dFrame.setAttribute('src', next);
+  }
+
   applySettings();
   updateRecorderUI();
+  initThemeAndPalette();
+  sync3DFrame();
 
   windowInput?.addEventListener('change', () => {
     applySettings();
@@ -282,7 +454,38 @@
   });
 
   streamSelect?.addEventListener('change', () => {
+    uiStreams = getSelectedStreams();
     uiStream = streamSelect.value;
+    syncChecksFromSelect();
+    applyStreamVisibility();
+  });
+
+  if (streamChecksEl) {
+    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
+    checks.forEach(c => {
+      c.addEventListener('change', () => {
+        syncSelectFromChecks();
+        uiStreams = getSelectedStreams();
+        uiStream = streamSelect ? streamSelect.value : 'all';
+        applyStreamVisibility();
+      });
+    });
+  }
+
+  selectAllBtn?.addEventListener('click', () => setAllStreams(true));
+  clearAllBtn?.addEventListener('click', () => setAllStreams(false));
+
+  themeSelect?.addEventListener('change', () => {
+    const v = themeSelect.value || 'dark';
+    localStorage.setItem('theme', v);
+    applyTheme(v);
+    applyThemeToPlots(v);
+  });
+
+  paletteSelect?.addEventListener('change', () => {
+    const v = paletteSelect.value || 'default';
+    localStorage.setItem('palette', v);
+    applyPaletteToPlots(v);
   });
 
   pauseBtn?.addEventListener('click', () => {
@@ -316,29 +519,47 @@
     }
 
     const wb = XLSX.utils.book_new();
-    const sensors = ['accel', 'gyro', 'mag', 'temp', 'pressure', 'altitude'];
 
-    for (const s of sensors) {
+    const vecSensors = ['accel', 'gyro', 'mag'];
+    for (const s of vecSensors) {
       const rows = recorder.rows.filter((r) => r.sensor === s);
-      const shaped = rows.map((r) =>
-        isVectorSensor(s)
-          ? { ts_ms: r.ts_ms, x: r.x, y: r.y, z: r.z, mag: r.mag, theta_deg: r.theta_deg, phi_deg: r.phi_deg }
-          : { ts_ms: r.ts_ms, value: r.value }
-      );
+      const shaped = rows.map((r) => ({ ts_ms: r.ts_ms, x: r.x, y: r.y, z: r.z }));
       const ws = XLSX.utils.json_to_sheet(shaped);
       XLSX.utils.book_append_sheet(wb, ws, s.toUpperCase());
     }
 
+    const baroRows = recorder.rows.filter((r) => r.sensor === 'temp' || r.sensor === 'pressure' || r.sensor === 'altitude');
+    const map = new Map();
+    for (const r of baroRows) {
+      let row = map.get(r.ts_ms);
+      if (!row) {
+        row = { ts_ms: r.ts_ms, temp: null, pressure: null, altitude: null };
+        map.set(r.ts_ms, row);
+      }
+      if (r.sensor === 'temp') row.temp = r.value;
+      else if (r.sensor === 'pressure') row.pressure = r.value;
+      else if (r.sensor === 'altitude') row.altitude = r.value;
+    }
+    const baroShaped = Array.from(map.values()).sort((a, b) => a.ts_ms - b.ts_ms);
+    const wsBaro = XLSX.utils.json_to_sheet(baroShaped);
+    XLSX.utils.book_append_sheet(wb, wsBaro, 'BARO');
+
     const startedAt = recorder.startedAt ?? Date.now();
-    const filename = `kiwi_experiment_${deviceKey}_${yyyymmdd_hhmmss(startedAt)}.xlsx`;
+    const base = board ? board.replace(/[^\w\-]+/g, '_') : 'kiwi';
+    const filename = `${base}_${deviceKey}_${yyyymmdd_hhmmss(startedAt)}.xlsx`;
     XLSX.writeFile(wb, filename);
   });
 
+  open3dBtn?.addEventListener('click', () => {
+    const src = devicePort ? String(devicePort) : 'all';
+    window.open(`/3d/?src=${encodeURIComponent(src)}`, '_blank');
+  });
+
   setConn('warn', 'connecting…');
-  reconnectsEl.textContent = '0';
-  lastSeenEl.textContent = '-';
-  bufMaxEl.textContent = String(maxPoints);
-  bufCountEl.textContent = '0';
+  if (reconnectsEl) reconnectsEl.textContent = '0';
+  if (lastSeenEl) lastSeenEl.textContent = '-';
+  if (bufMaxEl) bufMaxEl.textContent = String(maxPoints);
+  if (bufCountEl) bufCountEl.textContent = '0';
 
   const workerSrc = `
     function normalizeTimestampToMs(t) {
@@ -400,14 +621,16 @@
     }
 
     function unpackSerde(raw) {
-      if (!raw || !raw.measurement || typeof raw.timestamp !== 'number') return null;
+      if (!raw || !raw.measurement) return null;
+
+      const ts = Number(raw.timestamp);
+      if (!Number.isFinite(ts)) return null;
 
       const keys = Object.keys(raw.measurement);
       if (keys.length !== 1) return null;
 
       const variant = keys[0];
       const values = raw.measurement[variant];
-      const ts = raw.timestamp;
 
       if (Array.isArray(values) && values.length === 3 && variant !== 'Baro') {
         return { sensor: variant.toLowerCase(), x: values[0], y: values[1], z: values[2], ts };
@@ -472,17 +695,120 @@
 
   es.onerror = () => {
     reconnects += 1;
-    reconnectsEl.textContent = String(reconnects);
+    if (reconnectsEl) reconnectsEl.textContent = String(reconnects);
     setConn('bad', 'disconnected (auto-retrying…)');
   };
+
+  function clearAccelDraw() {
+    draw.accel.ts.length = 0;
+    draw.accel.x.length = 0;
+    draw.accel.y.length = 0;
+    draw.accel.z.length = 0;
+    draw.accel.mag.length = 0;
+    draw.accel.theta.length = 0;
+  }
+
+  function clearGyroDraw() {
+    draw.gyro.ts.length = 0;
+    draw.gyro.x.length = 0;
+    draw.gyro.y.length = 0;
+    draw.gyro.z.length = 0;
+    draw.gyro.mag.length = 0;
+  }
+
+  function clearMagDraw() {
+    draw.mag.ts.length = 0;
+    draw.mag.x.length = 0;
+    draw.mag.y.length = 0;
+    draw.mag.z.length = 0;
+    draw.mag.mag.length = 0;
+    draw.mag.theta.length = 0;
+    draw.mag.phi.length = 0;
+  }
+
+  function clearTempDraw() {
+    draw.temp.ts.length = 0;
+    draw.temp.v.length = 0;
+  }
+
+  function clearPressureDraw() {
+    draw.pressure.ts.length = 0;
+    draw.pressure.v.length = 0;
+  }
+
+  function clearAltitudeDraw() {
+    draw.altitude.ts.length = 0;
+    draw.altitude.v.length = 0;
+  }
+
+  function flush() {
+    if (accelDiv && draw.accel.ts.length) {
+      Plotly.extendTraces(
+        accelDiv,
+        { x: [draw.accel.ts, draw.accel.ts, draw.accel.ts, draw.accel.ts], y: [draw.accel.x, draw.accel.y, draw.accel.z, draw.accel.mag] },
+        [0, 1, 2, 3],
+        maxPoints
+      );
+      clearAccelDraw();
+    } else if (!accelDiv) {
+      clearAccelDraw();
+    }
+
+    if (gyroDiv && draw.gyro.ts.length) {
+      Plotly.extendTraces(
+        gyroDiv,
+        { x: [draw.gyro.ts, draw.gyro.ts, draw.gyro.ts, draw.gyro.ts], y: [draw.gyro.x, draw.gyro.y, draw.gyro.z, draw.gyro.mag] },
+        [0, 1, 2, 3],
+        maxPoints
+      );
+      clearGyroDraw();
+    } else if (!gyroDiv) {
+      clearGyroDraw();
+    }
+
+    if (magDiv && draw.mag.ts.length) {
+      Plotly.extendTraces(
+        magDiv,
+        { x: [draw.mag.ts, draw.mag.ts, draw.mag.ts, draw.mag.ts], y: [draw.mag.x, draw.mag.y, draw.mag.z, draw.mag.mag] },
+        [0, 1, 2, 3],
+        maxPoints
+      );
+      clearMagDraw();
+    } else if (!magDiv) {
+      clearMagDraw();
+    }
+
+    if (tempDiv && draw.temp.ts.length) {
+      Plotly.extendTraces(tempDiv, { x: [draw.temp.ts], y: [draw.temp.v] }, [0], maxPoints);
+      clearTempDraw();
+    } else if (!tempDiv) {
+      clearTempDraw();
+    }
+
+    if (pressureDiv && draw.pressure.ts.length) {
+      Plotly.extendTraces(pressureDiv, { x: [draw.pressure.ts], y: [draw.pressure.v] }, [0], maxPoints);
+      clearPressureDraw();
+    } else if (!pressureDiv) {
+      clearPressureDraw();
+    }
+
+    if (altitudeDiv && draw.altitude.ts.length) {
+      Plotly.extendTraces(altitudeDiv, { x: [draw.altitude.ts], y: [draw.altitude.v] }, [0], maxPoints);
+      clearAltitudeDraw();
+    } else if (!altitudeDiv) {
+      clearAltitudeDraw();
+    }
+  }
 
   function frame(now) {
     if (now - lastFrameMs >= FRAME_MS) {
       lastFrameMs = now;
 
       if (pending.length) {
-        const maxItemsThisFrame = Math.max(1, Math.round(rateHz * (FRAME_MS / 1000) * 3));
-        const batch = pending.splice(0, maxItemsThisFrame);
+        const MAX_LAG_ITEMS = maxPoints;
+        if (pending.length > MAX_LAG_ITEMS) pending.splice(0, pending.length - MAX_LAG_ITEMS);
+
+        const batch = pending.splice(0, 600);
 
         let lastVector = null;
         for (const item of batch) {
@@ -490,10 +816,9 @@
           handleItem(item);
         }
 
-        if (lastVector) {
-          updateValuePanel(lastVector);
-          renderDial(lastVector.phi_deg);
-        }
+        flush();
+
+        if (lastVector) updateValuePanel(lastVector);
 
         if (recorder.isRecording && batch.length) updateRecorderUI();
 
