@@ -67,6 +67,13 @@
     return all.filter((p) => String(p).includes(q));
   }
 
+  function makeBtn(label) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    return b;
+  }
+
   function render() {
     if (deviceCountEl) deviceCountEl.textContent = String(devices.size);
     if (!listEl) return;
@@ -75,15 +82,28 @@
     listEl.innerHTML = '';
 
     for (const port of ports) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = `Open device ${port}`;
-      btn.setAttribute('aria-label', `Open dashboard for device ${port}`);
-      btn.addEventListener('click', () => {
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.gap = '10px';
+      row.style.flexWrap = 'wrap';
+
+      const dashBtn = makeBtn(`Open device ${port}`);
+      dashBtn.setAttribute('aria-label', `Open dashboard for device ${port}`);
+      dashBtn.addEventListener('click', () => {
         const url = `/dashboard.html?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
         window.open(url, '_blank', 'noopener,noreferrer');
       });
-      listEl.appendChild(btn);
+
+      const view3dBtn = makeBtn(`3D ${port}`);
+      view3dBtn.setAttribute('aria-label', `Open 3D view for device ${port}`);
+      view3dBtn.addEventListener('click', () => {
+        const url = `/3d/?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
+        window.open(url, '_blank', 'noopener,noreferrer');
+      });
+
+      row.appendChild(dashBtn);
+      row.appendChild(view3dBtn);
+      listEl.appendChild(row);
     }
   }
 
