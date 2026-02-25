@@ -4,9 +4,28 @@
   const connText = document.getElementById('connText');
   const deviceCountEl = document.getElementById('deviceCount');
   const listEl = document.getElementById('deviceList');
+  const themeSelect = document.getElementById('themeSelect');
+  const boardNameEl = document.getElementById('boardName');
+
+  const deviceSearch = document.getElementById('deviceSearch');
+  const refreshBtn = document.getElementById('refreshBtn');
 
   const devices = new Set();
   let reconnects = 0;
+
+  const params = new URLSearchParams(window.location.search);
+  const board = params.get('board');
+
+  function applyTheme(theme) {
+    document.body.classList.toggle('light', theme === 'light');
+    document.body.classList.toggle('dark', theme !== 'light');
+  }
+
+  function initTheme() {
+    const saved = localStorage.getItem('theme') || 'dark';
+    if (themeSelect) themeSelect.value = saved;
+    applyTheme(saved);
+  }
 
   function getCss(varName) {
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
@@ -36,20 +55,55 @@
     connText.style.color = '#ffb8c0';
   }
 
+  function currentFilter() {
+    if (!deviceSearch) return '';
+    return String(deviceSearch.value || '').trim();
+  }
+
+  function filteredPorts() {
+    const q = currentFilter();
+    const all = Array.from(devices).sort((a, b) => Number(a) - Number(b));
+    if (!q) return all;
+    return all.filter((p) => String(p).includes(q));
+  }
+
+  function makeBtn(label) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    return b;
+  }
+
   function render() {
     if (deviceCountEl) deviceCountEl.textContent = String(devices.size);
     if (!listEl) return;
 
+    const ports = filteredPorts();
     listEl.innerHTML = '';
-    for (const port of Array.from(devices).sort((a, b) => Number(a) - Number(b))) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = `Open device ${port}`;
-      btn.addEventListener('click', () => {
-        const url = `/dashboard.html?src=${encodeURIComponent(port)}`;
+
+    for (const port of ports) {
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.gap = '10px';
+      row.style.flexWrap = 'wrap';
+
+      const dashBtn = makeBtn(`Open device ${port}`);
+      dashBtn.setAttribute('aria-label', `Open dashboard for device ${port}`);
+      dashBtn.addEventListener('click', () => {
+        const url = `/dashboard.html?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
         window.open(url, '_blank', 'noopener,noreferrer');
       });
-      listEl.appendChild(btn);
+
+      const view3dBtn = makeBtn(`3D ${port}`);
+      view3dBtn.setAttribute('aria-label', `Open 3D view for device ${port}`);
+      view3dBtn.addEventListener('click', () => {
+        const url = `/3d/?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
+        window.open(url, '_blank', 'noopener,noreferrer');
+      });
+
+      row.appendChild(dashBtn);
+      row.appendChild(view3dBtn);
+      listEl.appendChild(row);
     }
   }
 
@@ -58,18 +112,49 @@
     render();
   }
 
+  function fetchDevicesOnce() {
+    return fetch('/devices')
+      .then((r) => r.json())
+      .then((ports) => {
+        if (Array.isArray(ports)) addPorts(ports);
+      })
+      .catch(() => {});
+  }
+
+  initTheme();
+
+  if (boardNameEl && board) {
+    boardNameEl.textContent = board;
+    document.title = `${board} - Devices`;
+  }
+
+  if (themeSelect) {
+    themeSelect.addEventListener('change', () => {
+      const v = themeSelect.value || 'dark';
+      localStorage.setItem('theme', v);
+      applyTheme(v);
+    });
+  }
+
+  if (deviceSearch) {
+    deviceSearch.addEventListener('input', () => {
+      render();
+    });
+  }
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      fetchDevicesOnce();
+    });
+  }
+
   setConn('warn', 'connecting…');
 
   const es = new EventSource('/devices/events');
 
   es.onopen = () => {
     setConn('ok', 'connected (waiting for devices…)');
-    fetch('/devices')
-      .then((r) => r.json())
-      .then((ports) => {
-        if (Array.isArray(ports)) addPorts(ports);
-      })
-      .catch(() => {});
+    fetchDevicesOnce();
   };
 
   es.onmessage = (e) => {

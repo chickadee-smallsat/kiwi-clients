@@ -8,7 +8,7 @@
 </head>
 <body>
   <header>
-    <h1>Kiwi Sensor Dashboard</h1>
+    <h1 id="boardName">Kiwi Sensor Dashboard</h1>
     <p>Landing page · Devices appear automatically when UDP data arrives</p>
   </header>
 
@@ -22,13 +22,33 @@
           </span>
           <span class="pill">devices: <span id="deviceCount">0</span></span>
         </div>
+
+        <div class="row">
+          <label class="inlineLabel">
+            Theme
+            <select id="themeSelect">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </label>
+        </div>
       </div>
 
-      <div class="deviceList" id="deviceList"></div>
+      <details class="menu" id="deviceMenu" open>
+        <summary>Devices</summary>
+        <div class="menuBody">
+          <div class="menuActions">
+            <input id="deviceSearch" type="search" placeholder="Search device port…" aria-label="Search devices" />
+            <button id="refreshBtn" type="button">Refresh</button>
+          </div>
 
-      <p class="small" style="margin-top:12px;">
-        Click a device to open its live dashboard in a new tab.
-      </p>
+          <div class="deviceList" id="deviceList" role="list"></div>
+
+          <p class="small" style="margin-top:12px;">
+            Click a device to open its live dashboard in a new tab.
+          </p>
+        </div>
+      </details>
     </section>
   </main>
 
