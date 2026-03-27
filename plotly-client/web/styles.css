@@ -16,6 +16,8 @@
   --ctrl-bg:rgba(255,255,255,.06);
   --ctrl-bg2:rgba(255,255,255,.10);
   --ctrl-text:var(--text);
+
+  --kiwi-right-w:420px;
 }
 
 body.light{
@@ -48,13 +50,66 @@ header{display:none}
 .wrap{
   width:min(1400px,calc(100% - 24px));
   margin:12px auto 24px;
-  display:grid;
-  grid-template-columns:minmax(0,1fr) 420px;
+  display:flex;
   gap:12px;
+  min-height:0;
 }
 
 @media (max-width:1100px){
-  .wrap{grid-template-columns:1fr}
+  .wrap{flex-direction:column}
+}
+
+#kiwi-left-pane{
+  flex:1 1 auto;
+  min-width:420px;
+  min-height:0;
+}
+
+#kiwi-right-pane{
+  flex:0 0 var(--kiwi-right-w);
+  width:var(--kiwi-right-w);
+  min-width:320px;
+  max-width:820px;
+  min-height:0;
+}
+
+@media (max-width:1100px){
+  #kiwi-left-pane{min-width:0}
+  #kiwi-right-pane{flex:0 0 auto;width:100%;max-width:none}
+}
+
+#kiwi-splitter{
+  flex:0 0 10px;
+  width:10px;
+  cursor:col-resize;
+  position:relative;
+}
+
+@media (max-width:1100px){
+  #kiwi-splitter{display:none}
+}
+
+#kiwi-splitter::before{
+  content:"";
+  position:absolute;
+  top:10px;
+  bottom:10px;
+  left:50%;
+  transform:translateX(-50%);
+  width:3px;
+  border-radius:999px;
+  background:rgba(255,255,255,0.10);
+}
+
+#kiwi-splitter:hover::before{
+  background:rgba(255,255,255,0.22);
+}
+
+body.light #kiwi-splitter::before{
+  background:rgba(0,0,0,0.10);
+}
+body.light #kiwi-splitter:hover::before{
+  background:rgba(0,0,0,0.18);
 }
 
 .card{
@@ -70,6 +125,10 @@ header{display:none}
   position:sticky;
   top:12px;
   height:fit-content;
+}
+
+@media (max-width:1100px){
+  .stickyCard{position:static}
 }
 
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -93,11 +152,9 @@ header{display:none}
   background:var(--warn);
 }
 
-
 #connText{display:none !important}
 #connPill{padding:6px 8px}
 
-/* controls row */
 .controls{
   margin:10px 0 12px;
   display:flex;
@@ -141,7 +198,6 @@ button:disabled{opacity:.55;cursor:not-allowed}
 
 .btnRow{display:flex;gap:10px;flex-wrap:wrap}
 
-/*  dropdowns themes */
 select{
   appearance:none;
   -webkit-appearance:none;
@@ -156,7 +212,6 @@ select{
 select:focus{border-color:rgba(125,162,255,.55)}
 option{background:var(--card);color:var(--text)}
 
-/* Streams menu */
 details.menu{position:relative}
 details.menu > summary{
   list-style:none;
@@ -192,7 +247,6 @@ details.menu > summary::-webkit-details-marker{display:none}
 .check{display:flex;gap:8px;align-items:center;color:var(--text)}
 .check input{accent-color:#7aa2ff}
 
-/* plots */
 .plotDetails{
   margin-top:10px;
   border:1px solid var(--border);
@@ -251,7 +305,6 @@ details.menu > summary::-webkit-details-marker{display:none}
   margin:10px 0 0;
   color:var(--muted);
 }
-
 
 #imu3dWrap{
   width:100%;
