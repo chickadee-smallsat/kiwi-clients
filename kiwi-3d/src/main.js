@@ -14,12 +14,7 @@ const es = new EventSource(esUrl);
 
 const scene = new THREE.Scene();
 
-const gravityArrow = new THREE.ArrowHelper(
-  new THREE.Vector3(0, -1, 0),
-  new THREE.Vector3(0, 0, 0),
-  0.8,
-  0xff4444
-);
+const gravityArrow = new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 0), 0.8, 0xff4444);
 scene.add(gravityArrow);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
@@ -131,9 +126,8 @@ dir.position.set(1, 2, 1);
 scene.add(dir);
 
 let model = null;
-
 const loader = new GLTFLoader();
-loader.load("/kiwi.glb", (gltf) => {
+loader.load("kiwi.glb", (gltf) => {
   model = gltf.scene;
   model.scale.setScalar(3);
   scene.add(model);
@@ -142,20 +136,41 @@ loader.load("/kiwi.glb", (gltf) => {
 let lastAccel = null;
 let lastGyro = null;
 let lastMag = null;
-let lastTsMs = null;
 
-const ahrs = new AHRS({ algorithm: "Madgwick", sampleInterval: 20, beta: 0.08 });
+let lastTemp = null;
+let lastPressure = null;
+let lastAltitude = null;
+
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
 
-let baseTs = null;
-let baseWall = null;
-let tsScale = null;
+let betaUi = 0.08;
+const ahrs = new AHRS({ algorithm: "Madgwick", sampleInterval: 5, beta: betaUi });
 
 let qOffset = new THREE.Quaternion();
-let qTmp = new THREE.Quaternion();
+let qTarget = new THREE.Quaternion();
+let qDisplay = new THREE.Quaternion();
+const qModelAlign = new THREE.Quaternion();
 
 let frozen = false;
+
+let baroUI = null;
+let gTemp = null,
+  gPress = null,
+  gAlt = null;
+let lastGaugeUpdateMs = 0;
+
+function remapAccel(x, y, z) {
+  return [x, z, -y];
+}
+
+function remapGyro(x, y, z) {
+  return [x, z, -y];
+}
+
+function remapMag(x, y, z) {
+  return [x, z, -y];
+}
 
 if (resetBtn) {
   resetBtn.addEventListener("click", () => {
@@ -175,33 +190,154 @@ if (betaSlider) {
   betaSlider.addEventListener("input", () => {
     const v = Number(betaSlider.value);
     if (Number.isFinite(v)) {
-      ahrs.beta = v;
-      if (betaVal) betaVal.textContent = v.toFixed(2);
+      betaUi = v;
+      ahrs.beta = betaUi;
+      if (betaVal) betaVal.textContent = betaUi.toFixed(2);
     }
   });
 }
 
-function updateScale(rawDelta, wallDeltaMs) {
-  if (tsScale != null) return;
-  const perMs = rawDelta / wallDeltaMs;
-  if (perMs > 5e5) tsScale = 1e6;
-  else if (perMs > 5e2) tsScale = 1e3;
-  else tsScale = 1;
+function makeGauge(title, unit, min, max) {
+  const wrap = document.createElement("div");
+  wrap.style.width = "60px";
+  wrap.style.height = "240px";
+  wrap.style.borderRadius = "14px";
+  wrap.style.border = "1px solid rgba(255,255,255,0.14)";
+  wrap.style.background = "rgba(0,0,0,0.28)";
+  wrap.style.backdropFilter = "blur(10px)";
+  wrap.style.display = "flex";
+  wrap.style.flexDirection = "column";
+  wrap.style.padding = "10px 8px";
+  wrap.style.boxSizing = "border-box";
+  wrap.style.gap = "8px";
+  wrap.style.boxShadow = "0 10px 24px rgba(0,0,0,0.25)";
+
+  const head = document.createElement("div");
+  head.style.display = "flex";
+  head.style.flexDirection = "column";
+  head.style.gap = "2px";
+
+  const t = document.createElement("div");
+  t.textContent = title;
+  t.style.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+  t.style.color = "rgba(255,255,255,0.92)";
+  head.appendChild(t);
+
+  const v = document.createElement("div");
+  v.textContent = "—";
+  v.style.font = "13px ui-monospace, SFMono-Regular, Menlo, monospace";
+  v.style.color = "rgba(255,255,255,0.98)";
+  head.appendChild(v);
+
+  const u = document.createElement("div");
+  u.textContent = unit;
+  u.style.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+  u.style.color = "rgba(255,255,255,0.55)";
+  head.appendChild(u);
+
+  wrap.appendChild(head);
+
+  const track = document.createElement("div");
+  track.style.position = "relative";
+  track.style.flex = "1";
+  track.style.borderRadius = "12px";
+  track.style.border = "1px solid rgba(255,255,255,0.10)";
+  track.style.background = "rgba(255,255,255,0.05)";
+  track.style.overflow = "hidden";
+  wrap.appendChild(track);
+
+  const ticks = document.createElement("div");
+  ticks.style.position = "absolute";
+  ticks.style.inset = "0";
+  ticks.style.backgroundImage =
+    "repeating-linear-gradient(to top, rgba(255,255,255,0.16) 0px, rgba(255,255,255,0.16) 1px, transparent 1px, transparent 18px)";
+  ticks.style.opacity = "0.55";
+  track.appendChild(ticks);
+
+  const fill = document.createElement("div");
+  fill.style.position = "absolute";
+  fill.style.left = "0";
+  fill.style.right = "0";
+  fill.style.bottom = "0";
+  fill.style.height = "50%";
+  fill.style.background = "linear-gradient(to top, rgba(120,200,255,0.22), rgba(120,200,255,0.03))";
+  track.appendChild(fill);
+
+  const marker = document.createElement("div");
+  marker.style.position = "absolute";
+  marker.style.left = "0";
+  marker.style.right = "0";
+  marker.style.height = "2px";
+  marker.style.background = "rgba(255,90,90,0.95)";
+  marker.style.boxShadow = "0 0 10px rgba(255,90,90,0.42)";
+  marker.style.top = "50%";
+  track.appendChild(marker);
+
+  function setValue(val) {
+    if (!Number.isFinite(val)) {
+      v.textContent = "—";
+      marker.style.top = "50%";
+      fill.style.height = "50%";
+      return;
+    }
+    v.textContent = `${val.toFixed(2)}`;
+    const t = (val - min) / (max - min);
+    const cl = t < 0 ? 0 : t > 1 ? 1 : t;
+    marker.style.top = `${(1 - cl) * 100}%`;
+    fill.style.height = `${cl * 100}%`;
+  }
+
+  return { el: wrap, setValue };
 }
 
-function tsToMs(ts, wallNow) {
-  const n = Number(ts);
-  if (!Number.isFinite(n)) return wallNow;
-  if (baseTs == null) {
-    baseTs = n;
-    baseWall = wallNow;
-    return baseWall;
+function ensureBaroUI() {
+  if (baroUI) return;
+
+  const safe = "12px";
+
+  baroUI = document.createElement("div");
+  baroUI.style.position = "fixed";
+  baroUI.style.inset = "0";
+  baroUI.style.zIndex = "9998";
+  baroUI.style.pointerEvents = "none";
+  document.body.appendChild(baroUI);
+
+  const leftCol = document.createElement("div");
+  leftCol.style.position = "absolute";
+  leftCol.style.left = safe;
+  leftCol.style.top = "50%";
+  leftCol.style.transform = "translateY(-50%)";
+  leftCol.style.display = "flex";
+  leftCol.style.flexDirection = "column";
+  leftCol.style.gap = "10px";
+  baroUI.appendChild(leftCol);
+
+  const rightCol = document.createElement("div");
+  rightCol.style.position = "absolute";
+  rightCol.style.right = safe;
+  rightCol.style.top = "50%";
+  rightCol.style.transform = "translateY(-50%)";
+  rightCol.style.display = "flex";
+  rightCol.style.flexDirection = "column";
+  rightCol.style.gap = "10px";
+  baroUI.appendChild(rightCol);
+
+  gTemp = makeGauge("Temp", "°C", -20, 60);
+  gPress = makeGauge("Press", "hPa", 900, 1100);
+  gAlt = makeGauge("Alt", "m", -100, 5000);
+
+  leftCol.appendChild(gTemp.el);
+  rightCol.appendChild(gPress.el);
+  rightCol.appendChild(gAlt.el);
+
+  if (isEmbed) {
+    gTemp.el.style.width = "56px";
+    gTemp.el.style.height = "210px";
+    gPress.el.style.width = "56px";
+    gPress.el.style.height = "210px";
+    gAlt.el.style.width = "56px";
+    gAlt.el.style.height = "210px";
   }
-  const rawDelta = n - baseTs;
-  const wallDelta = Math.max(1, wallNow - baseWall);
-  if (rawDelta > 0) updateScale(rawDelta, wallDelta);
-  const s = tsScale == null ? 1 : tsScale;
-  return baseWall + rawDelta / s;
 }
 
 function unpackSerde(raw) {
@@ -226,14 +362,11 @@ function unpackSerde(raw) {
   return null;
 }
 
-function applyOrientation(q) {
-  if (!model) return;
-  qTmp.set(q.x, q.y, q.z, q.w);
-  model.quaternion.copy(qOffset).multiply(qTmp);
-}
-
 function quatToEulerDeg(q) {
-  const x = q.x, y = q.y, z = q.z, w = q.w;
+  const x = q.x,
+    y = q.y,
+    z = q.z,
+    w = q.w;
 
   const sinr_cosp = 2 * (w * x + y * z);
   const cosr_cosp = 1 - 2 * (x * x + y * y);
@@ -249,59 +382,148 @@ function quatToEulerDeg(q) {
   return { roll: roll * RAD2DEG, pitch: pitch * RAD2DEG, yaw: yaw * RAD2DEG };
 }
 
-function fuseIfReady(tsMs) {
-  if (frozen) return;
-  if (!lastAccel || !lastGyro || !model) return;
-
-  if (lastTsMs == null) lastTsMs = tsMs;
-  const dt = Math.max(5, Math.min(50, tsMs - lastTsMs));
-  lastTsMs = tsMs;
-
-  ahrs.sampleInterval = dt;
-
-  let gx = Number(lastGyro.x) * DEG2RAD;
-  let gy = Number(lastGyro.y) * DEG2RAD;
-  let gz = Number(lastGyro.z) * DEG2RAD;
-
-  const GYRO_DEADBAND = 0.02;
-  if (Math.abs(gx) < GYRO_DEADBAND) gx = 0;
-  if (Math.abs(gy) < GYRO_DEADBAND) gy = 0;
-  if (Math.abs(gz) < GYRO_DEADBAND) gz = 0;
-
-  let ax = Number(lastAccel.x);
-  let ay = Number(lastAccel.y);
-  let az = Number(lastAccel.z);
-
-  let Ax = ax;
-  let Ay = ay;
-  let Az = az;
-
-  let Gx = gx;
-  let Gy = gy;
-  let Gz = gz;
-
-  const n = Math.sqrt(Ax * Ax + Ay * Ay + Az * Az);
-  if (n > 1e-6) {
-    Ax /= n;
-    Ay /= n;
-    Az /= n;
-  }
-
-  const useMag = !!(lastMag && Number.isFinite(lastMag.x) && Number.isFinite(lastMag.y) && Number.isFinite(lastMag.z));
-
-  if (useMag) {
-    const mx = Number(lastMag.x);
-    const my = Number(lastMag.y);
-    const mz = Number(lastMag.z);
-    ahrs.update(Gx, Gy, Gz, Ax, Ay, Az, mx, my, mz);
-  } else {
-    ahrs.update(Gx, Gy, Gz, Ax, Ay, Az);
-  }
-
-  applyOrientation(ahrs.getQuaternion());
+function v3len(x, y, z) {
+  return Math.sqrt(x * x + y * y + z * z);
 }
 
-let msgCount = 0;
+function clamp(v, lo, hi) {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+function tsToMs(ts) {
+  const n = Number(ts);
+  return Number.isFinite(n) ? n / 1000 : Date.now();
+}
+
+const FUSION_STEP_MS = 5;
+const MAX_CATCHUP_MS = 60;
+
+let lastFusionMs = null;
+let accumMs = 0;
+
+let gyroBiasX = 0,
+  gyroBiasY = 0,
+  gyroBiasZ = 0;
+let lastAHRSQuat = null;
+
+const GYRO_DEADBAND_RAD = 0.02;
+const STILL_GYRO_RAD = 0.1;
+const STILL_ACC_ERR = 0.08;
+const TRUST_ACC_ERR = 0.18;
+
+function maybeInvertContinuity(q) {
+  if (!lastAHRSQuat) {
+    lastAHRSQuat = q.clone();
+    return q;
+  }
+  const dot = lastAHRSQuat.x * q.x + lastAHRSQuat.y * q.y + lastAHRSQuat.z * q.z + lastAHRSQuat.w * q.w;
+  if (dot < 0) q.set(-q.x, -q.y, -q.z, -q.w);
+  lastAHRSQuat.copy(q);
+  return q;
+}
+
+function fuseOneStep(stepMs) {
+  if (frozen) return;
+  if (!lastAccel || !lastGyro) return;
+
+  const stepSec = stepMs / 1000;
+  ahrs.sampleInterval = stepMs;
+
+  let gx0 = Number(lastGyro.x) * DEG2RAD;
+  let gy0 = Number(lastGyro.y) * DEG2RAD;
+  let gz0 = Number(lastGyro.z) * DEG2RAD;
+  if (!Number.isFinite(gx0) || !Number.isFinite(gy0) || !Number.isFinite(gz0)) return;
+
+  let ax0 = Number(lastAccel.x);
+  let ay0 = Number(lastAccel.y);
+  let az0 = Number(lastAccel.z);
+  if (!Number.isFinite(ax0) || !Number.isFinite(ay0) || !Number.isFinite(az0)) return;
+
+  const gM = remapGyro(gx0, gy0, gz0);
+  const aM = remapAccel(ax0, ay0, az0);
+
+  let gx = gM[0],
+    gy = gM[1],
+    gz = gM[2];
+  let ax = aM[0],
+    ay = aM[1],
+    az = aM[2];
+
+  if (Math.abs(gx) < GYRO_DEADBAND_RAD) gx = 0;
+  if (Math.abs(gy) < GYRO_DEADBAND_RAD) gy = 0;
+  if (Math.abs(gz) < GYRO_DEADBAND_RAD) gz = 0;
+
+  const aLen = v3len(ax, ay, az);
+  const accErr = Math.abs(aLen - 1.0);
+  const isStill = v3len(gx, gy, gz) < STILL_GYRO_RAD && accErr < STILL_ACC_ERR;
+
+  if (isStill) {
+    const alpha = clamp(stepSec / 2.0, 0.0, 0.02);
+    gyroBiasX += alpha * (gx - gyroBiasX);
+    gyroBiasY += alpha * (gy - gyroBiasY);
+    gyroBiasZ += alpha * (gz - gyroBiasZ);
+  }
+
+  gx -= gyroBiasX;
+  gy -= gyroBiasY;
+  gz -= gyroBiasZ;
+
+  let Ax = ax,
+    Ay = ay,
+    Az = az;
+  if (aLen > 1e-6) {
+    Ax /= aLen;
+    Ay /= aLen;
+    Az /= aLen;
+  }
+
+  const trustAccel = accErr < TRUST_ACC_ERR;
+  const uiBeta = Number.isFinite(betaUi) ? betaUi : 0.08;
+  const effBeta = trustAccel ? uiBeta : uiBeta * 0.12;
+  ahrs.beta = effBeta;
+
+  const useMag =
+    !!lastMag && Number.isFinite(lastMag.x) && Number.isFinite(lastMag.y) && Number.isFinite(lastMag.z) && trustAccel;
+
+  if (useMag) {
+    const mx0 = Number(lastMag.x);
+    const my0 = Number(lastMag.y);
+    const mz0 = Number(lastMag.z);
+    if (Number.isFinite(mx0) && Number.isFinite(my0) && Number.isFinite(mz0)) {
+      const mM = remapMag(mx0, my0, mz0);
+      ahrs.update(gx, gy, gz, Ax, Ay, Az, mM[0], mM[1], mM[2]);
+    } else {
+      ahrs.update(gx, gy, gz, Ax, Ay, Az);
+    }
+  } else {
+    ahrs.update(gx, gy, gz, Ax, Ay, Az);
+  }
+
+  const q = ahrs.getQuaternion();
+  const tq = new THREE.Quaternion(q.x, q.y, q.z, q.w);
+  maybeInvertContinuity(tq);
+  qTarget.copy(qOffset).multiply(tq).multiply(qModelAlign);
+}
+
+function processFusionTo(tsMs) {
+  if (!model) return;
+  if (lastFusionMs == null) {
+    lastFusionMs = tsMs;
+    return;
+  }
+  let dt = tsMs - lastFusionMs;
+  if (!Number.isFinite(dt) || dt <= 0) return;
+
+  dt = Math.min(dt, MAX_CATCHUP_MS);
+  lastFusionMs = tsMs;
+  accumMs += dt;
+
+  while (accumMs >= FUSION_STEP_MS) {
+    fuseOneStep(FUSION_STEP_MS);
+    accumMs -= FUSION_STEP_MS;
+  }
+}
+
 let msgWin = 0;
 let lastRateMs = performance.now();
 let rateHz = 0;
@@ -311,13 +533,15 @@ if (!demo) {
   es.onerror = () => console.log("SSE error / reconnecting...");
 
   es.onmessage = (e) => {
-    msgCount += 1;
     msgWin += 1;
 
     let parsed;
-    try { parsed = JSON.parse(e.data); } catch { return; }
+    try {
+      parsed = JSON.parse(e.data);
+    } catch {
+      return;
+    }
     const items = Array.isArray(parsed) ? parsed : [parsed];
-    const wallNow = Date.now();
 
     for (const raw of items) {
       const u0 = unpackSerde(raw);
@@ -325,13 +549,17 @@ if (!demo) {
       const list = Array.isArray(u0) ? u0 : [u0];
 
       for (const u of list) {
-        const tsMs = tsToMs(u.ts, wallNow);
+        const tsMs = tsToMs(u.ts);
 
         if (u.sensor === "accel") lastAccel = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
         if (u.sensor === "gyro") lastGyro = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
         if (u.sensor === "mag") lastMag = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
 
-        if (lastAccel && lastGyro) fuseIfReady(Math.max(lastAccel.ts_ms, lastGyro.ts_ms));
+        if (u.sensor === "temp" && Number.isFinite(u.value)) lastTemp = { ts_ms: tsMs, v: u.value };
+        if (u.sensor === "pressure" && Number.isFinite(u.value)) lastPressure = { ts_ms: tsMs, v: u.value };
+        if (u.sensor === "altitude" && Number.isFinite(u.value)) lastAltitude = { ts_ms: tsMs, v: u.value };
+
+        if (lastAccel && lastGyro) processFusionTo(Math.max(lastAccel.ts_ms, lastGyro.ts_ms));
       }
     }
   };
@@ -354,15 +582,18 @@ function feedDemo() {
   const my = 0.0;
   const mz = 0.4 * Math.sin(t * 0.35);
 
+  const temp = 23 + 2 * Math.sin(t * 0.2);
+  const pressPa = 101325 + 120 * Math.sin(t * 0.15);
+  const alt = 140 + 3 * Math.sin(t * 0.18);
+
   const ts = Math.floor(Date.now() * 1000);
 
   const fake = [
     { measurement: { Accel: [ax, ay, az] }, timestamp: ts },
     { measurement: { Gyro: [gx, gy, gz] }, timestamp: ts },
     { measurement: { Mag: [mx, my, mz] }, timestamp: ts },
+    { measurement: { Baro: [temp, pressPa, alt] }, timestamp: ts },
   ];
-
-  const wallNow = Date.now();
 
   for (const raw of fake) {
     const u0 = unpackSerde(raw);
@@ -370,19 +601,25 @@ function feedDemo() {
     const list = Array.isArray(u0) ? u0 : [u0];
 
     for (const u of list) {
-      const tsMs = tsToMs(u.ts, wallNow);
+      const tsMs = tsToMs(u.ts);
 
       if (u.sensor === "accel") lastAccel = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
       if (u.sensor === "gyro") lastGyro = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
       if (u.sensor === "mag") lastMag = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
 
-      if (lastAccel && lastGyro) fuseIfReady(Math.max(lastAccel.ts_ms, lastGyro.ts_ms));
+      if (u.sensor === "temp" && Number.isFinite(u.value)) lastTemp = { ts_ms: tsMs, v: u.value };
+      if (u.sensor === "pressure" && Number.isFinite(u.value)) lastPressure = { ts_ms: tsMs, v: u.value };
+      if (u.sensor === "altitude" && Number.isFinite(u.value)) lastAltitude = { ts_ms: tsMs, v: u.value };
+
+      if (lastAccel && lastGyro) processFusionTo(Math.max(lastAccel.ts_ms, lastGyro.ts_ms));
     }
   }
 }
 
 const modelWorldPos = new THREE.Vector3();
 const worldDown = new THREE.Vector3(0, -1, 0);
+
+let lastRenderMs = performance.now();
 
 function animate() {
   requestAnimationFrame(animate);
@@ -393,11 +630,38 @@ function animate() {
   }
 
   const now = performance.now();
-  const elapsed = now - lastRateMs;
-  if (elapsed >= 800) {
-    rateHz = (msgWin * 1000) / elapsed;
+  const elapsedRate = now - lastRateMs;
+  if (elapsedRate >= 800) {
+    rateHz = (msgWin * 1000) / elapsedRate;
     msgWin = 0;
     lastRateMs = now;
+  }
+
+  const dtRender = Math.max(0.001, Math.min(0.05, (now - lastRenderMs) / 1000));
+  lastRenderMs = now;
+
+  if (model) {
+    const tau = 0.07;
+    const k = 1 - Math.exp(-dtRender / tau);
+    qDisplay.slerp(qTarget, k);
+    model.quaternion.copy(qDisplay);
+
+    model.getWorldPosition(modelWorldPos);
+    gravityArrow.position.copy(modelWorldPos);
+    gravityArrow.setDirection(worldDown);
+  }
+
+  ensureBaroUI();
+  if (now - lastGaugeUpdateMs >= 120) {
+    gTemp.setValue(lastTemp ? lastTemp.v : NaN);
+
+    const pRaw = lastPressure ? lastPressure.v : NaN;
+    const pHpa = Number.isFinite(pRaw) ? (pRaw > 2000 ? pRaw / 100 : pRaw) : NaN;
+    gPress.setValue(pHpa);
+
+    gAlt.setValue(lastAltitude ? lastAltitude.v : NaN);
+
+    lastGaugeUpdateMs = now;
   }
 
   if (hud) {
@@ -413,17 +677,13 @@ function animate() {
     }
 
     hud.textContent =
-      `${modeText}  ${(rateHz || 0).toFixed(1)} Hz  beta ${Number(ahrs.beta).toFixed(2)}  ${frozen ? "FROZEN" : "LIVE"}\n` +
+      `${modeText}  ${(rateHz || 0).toFixed(1)} Hz  beta ${Number.isFinite(betaUi) ? betaUi.toFixed(2) : "0.08"}  ${
+        frozen ? "FROZEN" : "LIVE"
+      }\n` +
       `accel: ${a}\n` +
       `gyro:  ${g}\n` +
       `mag:   ${m}\n` +
       `euler: ${eulerText}`;
-  }
-
-  if (model) {
-    model.getWorldPosition(modelWorldPos);
-    gravityArrow.position.copy(modelWorldPos);
-    gravityArrow.setDirection(worldDown);
   }
 
   controls.update();
