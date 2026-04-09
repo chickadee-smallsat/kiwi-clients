@@ -74,8 +74,10 @@
   let uiStreams = new Set();
 
   const FRAME_MS = 33;
+  const RESYNC_MS = 1000;
   let pending = [];
   let lastFrameMs = 0;
+  let lastResyncMs = 0;
 
   const draw = {
     accel: { ts: [], x: [], y: [], z: [], mag: [], theta: [] },
@@ -271,7 +273,7 @@
     const t = THEMES[theme] || THEMES.dark;
     const divs = [accelDiv, gyroDiv, magDiv, tempDiv, pressureDiv, altitudeDiv];
     for (const div of divs) {
-      if (!div || !div.data) continue;
+      if (!div) continue;
       Plotly.relayout(div, {
         paper_bgcolor: t.paper_bgcolor,
         plot_bgcolor: t.plot_bgcolor,
@@ -286,12 +288,12 @@
     const colors = PALETTES[paletteKey] || PALETTES.default;
 
     function applyVector(div) {
-      if (!div || !div.data) return;
+      if (!div) return;
       Plotly.restyle(div, { line: [{ color: colors[0] }, { color: colors[1] }, { color: colors[2] }, { color: colors[3] }] }, [0, 1, 2, 3]);
     }
 
     function applyScalar(div, color) {
-      if (!div || !div.data) return;
+      if (!div) return;
       Plotly.restyle(div, { line: { color } }, [0]);
     }
 
@@ -399,23 +401,39 @@
     }
     if (paused) return;
 
-    const ts = item.ts_s;
-
     if (item.sensor === 'accel' && shouldDraw('accel') && plotVisible(accelDiv)) {
-      draw.accel.ts.push(ts);
+      store.accel.ts.push(item.ts_s);
+      store.accel.x.push(item.x);
+      store.accel.y.push(item.y);
+      store.accel.z.push(item.z);
+      store.accel.mag.push(item.mag);
+
+      draw.accel.ts.push(item.ts_s);
       draw.accel.x.push(item.x);
       draw.accel.y.push(item.y);
       draw.accel.z.push(item.z);
       draw.accel.mag.push(item.mag);
       draw.accel.theta.push(item.theta_deg);
     } else if (item.sensor === 'gyro' && shouldDraw('gyro') && plotVisible(gyroDiv)) {
-      draw.gyro.ts.push(ts);
+      store.gyro.ts.push(item.ts_s);
+      store.gyro.x.push(item.x);
+      store.gyro.y.push(item.y);
+      store.gyro.z.push(item.z);
+      store.gyro.mag.push(item.mag);
+
+      draw.gyro.ts.push(item.ts_s);
       draw.gyro.x.push(item.x);
       draw.gyro.y.push(item.y);
       draw.gyro.z.push(item.z);
       draw.gyro.mag.push(item.mag);
     } else if (item.sensor === 'mag' && shouldDraw('mag') && plotVisible(magDiv)) {
-      draw.mag.ts.push(ts);
+      store.mag.ts.push(item.ts_s);
+      store.mag.x.push(item.x);
+      store.mag.y.push(item.y);
+      store.mag.z.push(item.z);
+      store.mag.mag.push(item.mag);
+
+      draw.mag.ts.push(item.ts_s);
       draw.mag.x.push(item.x);
       draw.mag.y.push(item.y);
       draw.mag.z.push(item.z);
@@ -423,13 +441,22 @@
       draw.mag.theta.push(item.theta_deg);
       draw.mag.phi.push(item.phi_deg);
     } else if (item.sensor === 'temp' && shouldDraw('temp') && plotVisible(tempDiv)) {
-      draw.temp.ts.push(ts);
+      store.temp.ts.push(item.ts_s);
+      store.temp.v.push(item.value);
+
+      draw.temp.ts.push(item.ts_s);
       draw.temp.v.push(item.value);
     } else if (item.sensor === 'pressure' && shouldDraw('pressure') && plotVisible(pressureDiv)) {
-      draw.pressure.ts.push(ts);
+      store.pressure.ts.push(item.ts_s);
+      store.pressure.v.push(item.value);
+
+      draw.pressure.ts.push(item.ts_s);
       draw.pressure.v.push(item.value);
     } else if (item.sensor === 'altitude' && shouldDraw('altitude') && plotVisible(altitudeDiv)) {
-      draw.altitude.ts.push(ts);
+      store.altitude.ts.push(item.ts_s);
+      store.altitude.v.push(item.value);
+
+      draw.altitude.ts.push(item.ts_s);
       draw.altitude.v.push(item.value);
     }
   }
@@ -508,156 +535,6 @@
     splitter.addEventListener('mousedown', onDown);
   }
 
-  function trimVectorStore(storeObj) {
-    if (!storeObj.ts.length) return null;
-    const latest = storeObj.ts[storeObj.ts.length - 1];
-    const cutoff = latest - windowSec;
-    let idx = 0;
-    while (idx < storeObj.ts.length && storeObj.ts[idx] < cutoff) idx++;
-    if (idx > 0) {
-      storeObj.ts.splice(0, idx);
-      storeObj.x.splice(0, idx);
-      storeObj.y.splice(0, idx);
-      storeObj.z.splice(0, idx);
-      storeObj.mag.splice(0, idx);
-    }
-    return latest;
-  }
-
-  function trimScalarStore(storeObj) {
-    if (!storeObj.ts.length) return null;
-    const latest = storeObj.ts[storeObj.ts.length - 1];
-    const cutoff = latest - windowSec;
-    let idx = 0;
-    while (idx < storeObj.ts.length && storeObj.ts[idx] < cutoff) idx++;
-    if (idx > 0) {
-      storeObj.ts.splice(0, idx);
-      storeObj.v.splice(0, idx);
-    }
-    return latest;
-  }
-
-  function flush() {
-    if (draw.accel.ts.length) {
-      Array.prototype.push.apply(store.accel.ts, draw.accel.ts);
-      Array.prototype.push.apply(store.accel.x, draw.accel.x);
-      Array.prototype.push.apply(store.accel.y, draw.accel.y);
-      Array.prototype.push.apply(store.accel.z, draw.accel.z);
-      Array.prototype.push.apply(store.accel.mag, draw.accel.mag);
-      clearAccelDraw();
-    }
-
-    if (draw.gyro.ts.length) {
-      Array.prototype.push.apply(store.gyro.ts, draw.gyro.ts);
-      Array.prototype.push.apply(store.gyro.x, draw.gyro.x);
-      Array.prototype.push.apply(store.gyro.y, draw.gyro.y);
-      Array.prototype.push.apply(store.gyro.z, draw.gyro.z);
-      Array.prototype.push.apply(store.gyro.mag, draw.gyro.mag);
-      clearGyroDraw();
-    }
-
-    if (draw.mag.ts.length) {
-      Array.prototype.push.apply(store.mag.ts, draw.mag.ts);
-      Array.prototype.push.apply(store.mag.x, draw.mag.x);
-      Array.prototype.push.apply(store.mag.y, draw.mag.y);
-      Array.prototype.push.apply(store.mag.z, draw.mag.z);
-      Array.prototype.push.apply(store.mag.mag, draw.mag.mag);
-      clearMagDraw();
-    }
-
-    if (draw.temp.ts.length) {
-      Array.prototype.push.apply(store.temp.ts, draw.temp.ts);
-      Array.prototype.push.apply(store.temp.v, draw.temp.v);
-      clearTempDraw();
-    }
-
-    if (draw.pressure.ts.length) {
-      Array.prototype.push.apply(store.pressure.ts, draw.pressure.ts);
-      Array.prototype.push.apply(store.pressure.v, draw.pressure.v);
-      clearPressureDraw();
-    }
-
-    if (draw.altitude.ts.length) {
-      Array.prototype.push.apply(store.altitude.ts, draw.altitude.ts);
-      Array.prototype.push.apply(store.altitude.v, draw.altitude.v);
-      clearAltitudeDraw();
-    }
-
-    const palette = PALETTES[currentPalette()] || PALETTES.default;
-
-    if (accelDiv) {
-      const latest = trimVectorStore(store.accel);
-      if (latest !== null) {
-        Plotly.restyle(accelDiv, {
-          x: [store.accel.ts, store.accel.ts, store.accel.ts, store.accel.ts],
-          y: [store.accel.x, store.accel.y, store.accel.z, store.accel.mag],
-          line: [{ color: palette[0] }, { color: palette[1] }, { color: palette[2] }, { color: palette[3] }]
-        }, [0, 1, 2, 3]);
-        Plotly.relayout(accelDiv, { 'xaxis.range': [latest - windowSec, latest] });
-      }
-    }
-
-    if (gyroDiv) {
-      const latest = trimVectorStore(store.gyro);
-      if (latest !== null) {
-        Plotly.restyle(gyroDiv, {
-          x: [store.gyro.ts, store.gyro.ts, store.gyro.ts, store.gyro.ts],
-          y: [store.gyro.x, store.gyro.y, store.gyro.z, store.gyro.mag],
-          line: [{ color: palette[0] }, { color: palette[1] }, { color: palette[2] }, { color: palette[3] }]
-        }, [0, 1, 2, 3]);
-        Plotly.relayout(gyroDiv, { 'xaxis.range': [latest - windowSec, latest] });
-      }
-    }
-
-    if (magDiv) {
-      const latest = trimVectorStore(store.mag);
-      if (latest !== null) {
-        Plotly.restyle(magDiv, {
-          x: [store.mag.ts, store.mag.ts, store.mag.ts, store.mag.ts],
-          y: [store.mag.x, store.mag.y, store.mag.z, store.mag.mag],
-          line: [{ color: palette[0] }, { color: palette[1] }, { color: palette[2] }, { color: palette[3] }]
-        }, [0, 1, 2, 3]);
-        Plotly.relayout(magDiv, { 'xaxis.range': [latest - windowSec, latest] });
-      }
-    }
-
-    if (tempDiv) {
-      const latest = trimScalarStore(store.temp);
-      if (latest !== null) {
-        Plotly.restyle(tempDiv, {
-          x: [store.temp.ts],
-          y: [store.temp.v],
-          line: { color: palette[0] }
-        }, [0]);
-        Plotly.relayout(tempDiv, { 'xaxis.range': [latest - windowSec, latest] });
-      }
-    }
-
-    if (pressureDiv) {
-      const latest = trimScalarStore(store.pressure);
-      if (latest !== null) {
-        Plotly.restyle(pressureDiv, {
-          x: [store.pressure.ts],
-          y: [store.pressure.v],
-          line: { color: palette[1] }
-        }, [0]);
-        Plotly.relayout(pressureDiv, { 'xaxis.range': [latest - windowSec, latest] });
-      }
-    }
-
-    if (altitudeDiv) {
-      const latest = trimScalarStore(store.altitude);
-      if (latest !== null) {
-        Plotly.restyle(altitudeDiv, {
-          x: [store.altitude.ts],
-          y: [store.altitude.v],
-          line: { color: palette[2] }
-        }, [0]);
-        Plotly.relayout(altitudeDiv, { 'xaxis.range': [latest - windowSec, latest] });
-      }
-    }
-  }
-
   function clearAccelDraw() {
     draw.accel.ts.length = 0;
     draw.accel.x.length = 0;
@@ -700,6 +577,154 @@
     draw.altitude.v.length = 0;
   }
 
+  function trimVectorStore(storeObj) {
+    if (!storeObj.ts.length) return null;
+    const latest = storeObj.ts[storeObj.ts.length - 1];
+    const cutoff = latest - Math.max(windowSec * 3, 30);
+    let idx = 0;
+    while (idx < storeObj.ts.length && storeObj.ts[idx] < cutoff) idx++;
+    if (idx > 0) {
+      storeObj.ts.splice(0, idx);
+      storeObj.x.splice(0, idx);
+      storeObj.y.splice(0, idx);
+      storeObj.z.splice(0, idx);
+      storeObj.mag.splice(0, idx);
+    }
+    return latest;
+  }
+
+  function trimScalarStore(storeObj) {
+    if (!storeObj.ts.length) return null;
+    const latest = storeObj.ts[storeObj.ts.length - 1];
+    const cutoff = latest - Math.max(windowSec * 3, 30);
+    let idx = 0;
+    while (idx < storeObj.ts.length && storeObj.ts[idx] < cutoff) idx++;
+    if (idx > 0) {
+      storeObj.ts.splice(0, idx);
+      storeObj.v.splice(0, idx);
+    }
+    return latest;
+  }
+
+  function selectVectorWindow(storeObj) {
+    if (!storeObj.ts.length) return null;
+    const latest = storeObj.ts[storeObj.ts.length - 1];
+    const cutoff = latest - windowSec;
+    let idx = 0;
+    while (idx < storeObj.ts.length && storeObj.ts[idx] < cutoff) idx++;
+    return {
+      latest,
+      ts: storeObj.ts.slice(idx),
+      x: storeObj.x.slice(idx),
+      y: storeObj.y.slice(idx),
+      z: storeObj.z.slice(idx),
+      mag: storeObj.mag.slice(idx),
+    };
+  }
+
+  function selectScalarWindow(storeObj) {
+    if (!storeObj.ts.length) return null;
+    const latest = storeObj.ts[storeObj.ts.length - 1];
+    const cutoff = latest - windowSec;
+    let idx = 0;
+    while (idx < storeObj.ts.length && storeObj.ts[idx] < cutoff) idx++;
+    return {
+      latest,
+      ts: storeObj.ts.slice(idx),
+      v: storeObj.v.slice(idx),
+    };
+  }
+
+  function resyncVector(div, selected) {
+    if (!div || !selected) return;
+    Plotly.restyle(div, {
+      x: [selected.ts, selected.ts, selected.ts, selected.ts],
+      y: [selected.x, selected.y, selected.z, selected.mag]
+    }, [0, 1, 2, 3]);
+    Plotly.relayout(div, { 'xaxis.range': [selected.latest - windowSec, selected.latest] });
+  }
+
+  function resyncScalar(div, selected) {
+    if (!div || !selected) return;
+    Plotly.restyle(div, {
+      x: [selected.ts],
+      y: [selected.v]
+    }, [0]);
+    Plotly.relayout(div, { 'xaxis.range': [selected.latest - windowSec, selected.latest] });
+  }
+
+  function flush() {
+    if (accelDiv && draw.accel.ts.length) {
+      const latest = draw.accel.ts[draw.accel.ts.length - 1];
+      Plotly.extendTraces(
+        accelDiv,
+        { x: [draw.accel.ts, draw.accel.ts, draw.accel.ts, draw.accel.ts], y: [draw.accel.x, draw.accel.y, draw.accel.z, draw.accel.mag] },
+        [0, 1, 2, 3]
+      );
+      Plotly.relayout(accelDiv, { 'xaxis.range': [latest - windowSec, latest] });
+      clearAccelDraw();
+    }
+
+    if (gyroDiv && draw.gyro.ts.length) {
+      const latest = draw.gyro.ts[draw.gyro.ts.length - 1];
+      Plotly.extendTraces(
+        gyroDiv,
+        { x: [draw.gyro.ts, draw.gyro.ts, draw.gyro.ts, draw.gyro.ts], y: [draw.gyro.x, draw.gyro.y, draw.gyro.z, draw.gyro.mag] },
+        [0, 1, 2, 3]
+      );
+      Plotly.relayout(gyroDiv, { 'xaxis.range': [latest - windowSec, latest] });
+      clearGyroDraw();
+    }
+
+    if (magDiv && draw.mag.ts.length) {
+      const latest = draw.mag.ts[draw.mag.ts.length - 1];
+      Plotly.extendTraces(
+        magDiv,
+        { x: [draw.mag.ts, draw.mag.ts, draw.mag.ts, draw.mag.ts], y: [draw.mag.x, draw.mag.y, draw.mag.z, draw.mag.mag] },
+        [0, 1, 2, 3]
+      );
+      Plotly.relayout(magDiv, { 'xaxis.range': [latest - windowSec, latest] });
+      clearMagDraw();
+    }
+
+    if (tempDiv && draw.temp.ts.length) {
+      const latest = draw.temp.ts[draw.temp.ts.length - 1];
+      Plotly.extendTraces(tempDiv, { x: [draw.temp.ts], y: [draw.temp.v] }, [0]);
+      Plotly.relayout(tempDiv, { 'xaxis.range': [latest - windowSec, latest] });
+      clearTempDraw();
+    }
+
+    if (pressureDiv && draw.pressure.ts.length) {
+      const latest = draw.pressure.ts[draw.pressure.ts.length - 1];
+      Plotly.extendTraces(pressureDiv, { x: [draw.pressure.ts], y: [draw.pressure.v] }, [0]);
+      Plotly.relayout(pressureDiv, { 'xaxis.range': [latest - windowSec, latest] });
+      clearPressureDraw();
+    }
+
+    if (altitudeDiv && draw.altitude.ts.length) {
+      const latest = draw.altitude.ts[draw.altitude.ts.length - 1];
+      Plotly.extendTraces(altitudeDiv, { x: [draw.altitude.ts], y: [draw.altitude.v] }, [0]);
+      Plotly.relayout(altitudeDiv, { 'xaxis.range': [latest - windowSec, latest] });
+      clearAltitudeDraw();
+    }
+  }
+
+  function resyncPlots() {
+    trimVectorStore(store.accel);
+    trimVectorStore(store.gyro);
+    trimVectorStore(store.mag);
+    trimScalarStore(store.temp);
+    trimScalarStore(store.pressure);
+    trimScalarStore(store.altitude);
+
+    resyncVector(accelDiv, selectVectorWindow(store.accel));
+    resyncVector(gyroDiv, selectVectorWindow(store.gyro));
+    resyncVector(magDiv, selectVectorWindow(store.mag));
+    resyncScalar(tempDiv, selectScalarWindow(store.temp));
+    resyncScalar(pressureDiv, selectScalarWindow(store.pressure));
+    resyncScalar(altitudeDiv, selectScalarWindow(store.altitude));
+  }
+
   applySettings();
   updateRecorderUI();
   initThemeAndPalette();
@@ -708,6 +733,8 @@
 
   windowInput?.addEventListener('change', () => {
     applySettings();
+    resyncPlots();
+    bufferedPoints = 0;
     setConn('ok', `connected (${deviceKey})`);
   });
 
@@ -993,6 +1020,11 @@
         }
 
         flush();
+
+        if (now - lastResyncMs >= RESYNC_MS) {
+          resyncPlots();
+          lastResyncMs = now;
+        }
 
         if (lastVector) updateValuePanel(lastVector);
 
