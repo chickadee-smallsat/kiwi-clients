@@ -2,7 +2,7 @@ use std::{io, sync::Arc};
 
 #[cfg(debug_assertions)]
 use actix_files as fs;
-use actix_web::{App, HttpServer, Responder, get, middleware::Logger, web};
+use actix_web::{get, middleware::Logger, web, App, HttpServer, Responder};
 
 mod broadcast;
 mod udp;
@@ -44,7 +44,6 @@ async fn main() -> io::Result<()> {
             .service(device_stream);
 
         #[cfg(debug_assertions)]
-        // Serve static files from the local filesystem in debug mode
         let app = app.service(
             fs::Files::new("", format!("{}/web", env!("CARGO_MANIFEST_DIR")))
                 .index_file("index.html")
@@ -52,7 +51,6 @@ async fn main() -> io::Result<()> {
         );
 
         #[cfg(not(debug_assertions))]
-        // Serve embedded static files in release mode
         let app = app.service(assets::serve_assets);
 
         app.wrap(Logger::default())
@@ -106,44 +104,72 @@ struct Args {
     /// Address to bind the UDP socket to
     #[clap(long, default_value = "0.0.0.0")]
     udp_addr: String,
+
     /// Port to bind the UDP socket to
     #[clap(long, default_value = "8099")]
     udp_port: u16,
+
     /// Address to bind the HTTP server to
     #[clap(long, default_value = "127.0.0.1")]
     http_addr: String,
+
     /// Port to bind the HTTP server to
     #[clap(long, default_value = "8080")]
     http_port: u16,
 }
 
-// In release mode, serve embedded assets
 #[cfg(not(debug_assertions))]
 mod assets {
-    use actix_web::{route, web};
-    // #[cfg(not(debug_assertions))]
-    use actix_web_rust_embed_responder::{EmbedResponse, IntoResponse};
-    use rust_embed::{EmbeddedFile, RustEmbed};
+    use actix_web::{route, web, HttpResponse, Result};
+    use rust_embed::RustEmbed;
 
     #[derive(RustEmbed)]
     #[folder = "web/"]
     struct Asset;
 
-    // This responder implements both GET and HEAD
-    #[route("/{path:.*}", method = "GET", method = "HEAD")]
-    // The return type is important, that is the type for this responder
-    async fn serve_assets(path: web::Path<String>) -> EmbedResponse<EmbeddedFile> {
-        // This is not required, but is likely what you want if you want this
-        // to serve `index.html` as the home page.
-        let path = if path.is_empty() {
-            "index.html"
+    fn content_type_for(path: &str) -> &'static str {
+        if path.ends_with(".html") {
+            "text/html; charset=utf-8"
+        } else if path.ends_with(".js") {
+            "application/javascript; charset=utf-8"
+        } else if path.ends_with(".css") {
+            "text/css; charset=utf-8"
+        } else if path.ends_with(".glb") {
+            "model/gltf-binary"
+        } else if path.ends_with(".json") {
+            "application/json; charset=utf-8"
+        } else if path.ends_with(".svg") {
+            "image/svg+xml"
+        } else if path.ends_with(".png") {
+            "image/png"
+        } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+            "image/jpeg"
+        } else if path.ends_with(".wasm") {
+            "application/wasm"
         } else {
-            path.as_str()
+            "application/octet-stream"
+        }
+    }
+
+    #[route("/{path:.*}", method = "GET", method = "HEAD")]
+    async fn serve_assets(path: web::Path<String>) -> Result<HttpResponse> {
+        let raw_path = path.into_inner();
+
+        let path = if raw_path.is_empty() {
+            "index.html".to_string()
+        } else if raw_path.ends_with('/') {
+            format!("{}index.html", raw_path)
+        } else if !raw_path.contains('.') {
+            format!("{}/index.html", raw_path)
+        } else {
+            raw_path
         };
-        // There are implementations of `.into_response()` for both `EmbeddedFile` and `Option<EmbeddedFile>`.
-        // With `Option<EmbeddedFile>`, this responder will also handle sending a 404 response for `None`.
-        // If you want to customize the `404` response, you can handle the `None` case yourself: see the
-        // `custom-404.rs` test for an example.
-        Asset::get(path).into_response()
+
+        match Asset::get(&path) {
+            Some(content) => Ok(HttpResponse::Ok()
+                .insert_header(("Content-Type", content_type_for(&path)))
+                .body(content.data.into_owned())),
+            None => Ok(HttpResponse::NotFound().finish()),
+        }
     }
 }
