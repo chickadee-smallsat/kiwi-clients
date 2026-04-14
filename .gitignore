@@ -6,6 +6,7 @@
 **/*.csv
 node_modules
 plotly-client/web/3d
-electron-app/node_modules
-electron-app/dist
-electron-app/resources/bin
+plotly-client/kiwi-3d/dist
+plotly-app/node_modules
+plotly-app/dist
+plotly-app/resources/bin
