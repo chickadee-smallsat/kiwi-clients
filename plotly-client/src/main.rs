@@ -23,8 +23,10 @@ async fn main() -> io::Result<()> {
         args.http_port
     );
 
-    if let Err(e) = open::that(format!("http://localhost:{}", args.http_port)) {
-        log::warn!("Failed to open browser: {}", e)
+    if !args.no_open {
+        if let Err(e) = open::that(format!("http://localhost:{}", args.http_port)) {
+            log::warn!("Failed to open browser: {}", e)
+        }
     }
 
     actix_web::rt::spawn({
@@ -116,6 +118,10 @@ struct Args {
     /// Port to bind the HTTP server to
     #[clap(long, default_value = "8080")]
     http_port: u16,
+
+    /// Disable launching a browser on startup
+    #[clap(long, default_value_t = false)]
+    no_open: bool,
 }
 
 #[cfg(not(debug_assertions))]
