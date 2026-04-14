@@ -2,16 +2,21 @@ use std::process::Command;
 use std::fs;
 use std::path::Path;
 
+#[cfg(target_os = "windows")]
+const NPM_COMMAND: &str = "npm.cmd";
+#[cfg(not(target_os = "windows"))]
+const NPM_COMMAND: &str = "npm";
+
 fn main() {
     println!("cargo:rerun-if-changed=kiwi-3d");
 
-    let _ = Command::new("npm")
+    let _ = Command::new(NPM_COMMAND)
         .args(["install"])
         .current_dir("kiwi-3d")
         .status()
         .expect("Failed to run npm install");
 
-    let status = Command::new("npm")
+    let status = Command::new(NPM_COMMAND)
         .args(["run", "build"])
         .current_dir("kiwi-3d")
         .status()
