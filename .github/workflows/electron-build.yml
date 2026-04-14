@@ -2,6 +2,12 @@ name: build-electron
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -15,14 +21,16 @@ jobs:
             artifact_path: plotly-app/dist/*.AppImage
           - os: windows-latest
             artifact_name: windows
-            dist_script: dist:win
+            dist_script: dist:win:ci
+            artifact_path: plotly-app/dist/*.exe
+          - os: windows-latest
+            artifact_name: windows-arm64
+            dist_script: dist:win:ci:arm64
             artifact_path: plotly-app/dist/*.exe
           - os: macos-latest
             artifact_name: macos
-            dist_script: dist:mac
-            artifact_path: |
-              plotly-app/dist/*.dmg
-              plotly-app/dist/*.zip
+            dist_script: dist:mac:ci
+            artifact_path: plotly-app/dist/*.dmg
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -39,6 +47,14 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Set package version from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Using package version: ${VERSION}"
+          npm --prefix plotly-app version "${VERSION}" --no-git-tag-version --allow-same-version
+
       - name: Install Node dependencies
         run: npm --prefix plotly-app ci
 
@@ -51,3 +67,20 @@ jobs:
           name: plotly-client-${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_path }}
           if-no-files-found: error
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: plotly-client-*
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*
