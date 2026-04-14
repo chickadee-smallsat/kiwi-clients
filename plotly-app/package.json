@@ -1,0 +1,64 @@
+{
+  "name": "plotly-client-electron",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron wrapper for the plotly-client Rust server",
+  "author": "Chickadee",
+  "license": "UNLICENSED",
+  "main": "main.cjs",
+  "scripts": {
+    "build:rust": "cargo build --release -p plotly-client",
+    "prepare:bin": "node scripts/prepare-binary.cjs",
+    "start": "electron .",
+    "dev": "npm run build:rust && npm run prepare:bin && npm run start",
+    "pack": "npm run build:rust && npm run prepare:bin && electron-builder --dir",
+    "dist": "npm run build:rust && npm run prepare:bin && electron-builder",
+    "dist:linux": "npm run build:rust && npm run prepare:bin && electron-builder --linux AppImage",
+    "dist:win": "npm run build:rust && npm run prepare:bin && electron-builder --win nsis",
+    "dist:mac": "npm run build:rust && npm run prepare:bin && electron-builder --mac dmg zip"
+  },
+  "devDependencies": {
+    "electron": "^41.2.0",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.chickadee.plotlyclient",
+    "productName": "Plotly Client",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bin/",
+        "to": "bin/",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.utilities"
+    }
+  }
+}
