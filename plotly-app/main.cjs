@@ -148,7 +148,7 @@ app.whenReady().then(async () => {
   try {
     await createMainWindow();
   } catch (err) {
-    dialog.showErrorBox('Failed to start Plotly Client', String(err));
+    dialog.showErrorBox('Failed to start Kiwi Frontend', String(err));
     app.quit();
   }
 });

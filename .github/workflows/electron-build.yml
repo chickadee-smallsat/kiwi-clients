@@ -23,7 +23,7 @@ jobs:
             artifact_name: windows
             dist_script: dist:win:ci
             artifact_path: plotly-app/dist/*.exe
-          - os: windows-latest
+          - os: windows-11-arm
             artifact_name: windows-arm64
             dist_script: dist:win:ci:arm64
             artifact_path: plotly-app/dist/*.exe
@@ -78,9 +78,9 @@ jobs:
         with:
           pattern: plotly-client-*
           path: release-artifacts
-          merge-multiple: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-artifacts/*
+          name: ${{ github.ref_name }}
+          files: release-artifacts/**/*
