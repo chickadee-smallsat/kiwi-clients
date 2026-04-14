@@ -2,7 +2,7 @@ use std::{io, sync::Arc};
 
 #[cfg(debug_assertions)]
 use actix_files as fs;
-use actix_web::{get, middleware::Logger, web, App, HttpServer, Responder};
+use actix_web::{App, HttpServer, Responder, get, middleware::Logger, web};
 
 mod broadcast;
 mod udp;
@@ -23,10 +23,10 @@ async fn main() -> io::Result<()> {
         args.http_port
     );
 
-    if !args.no_open {
-        if let Err(e) = open::that(format!("http://localhost:{}", args.http_port)) {
-            log::warn!("Failed to open browser: {}", e)
-        }
+    if !args.no_open
+        && let Err(e) = open::that(format!("http://localhost:{}", args.http_port))
+    {
+        log::warn!("Failed to open browser: {}", e)
     }
 
     actix_web::rt::spawn({
@@ -126,7 +126,7 @@ struct Args {
 
 #[cfg(not(debug_assertions))]
 mod assets {
-    use actix_web::{route, web, HttpResponse, Result};
+    use actix_web::{HttpResponse, Result, route, web};
     use rust_embed::RustEmbed;
 
     #[derive(RustEmbed)]
