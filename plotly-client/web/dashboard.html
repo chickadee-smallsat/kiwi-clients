@@ -13,8 +13,8 @@
     <p>Live UDP → Rust (Actix) → SSE → Browser · Per-device dashboard · Excel export</p>
   </header>
 
-  <main class="wrap">
-    <section class="card scrollCard">
+  <main class="wrap" id="kiwi-split-root">
+    <section class="card scrollCard" id="kiwi-left-pane">
       <div class="row space">
         <div class="row">
           <span class="pill" id="connPill">
@@ -118,7 +118,9 @@
       </details>
     </section>
 
-    <section class="card stickyCard">
+    <div id="kiwi-splitter" title="Drag to resize"></div>
+
+    <section class="card stickyCard" id="kiwi-right-pane">
       <div class="btnRow" style="margin-bottom: 10px;">
         <button id="recordBtn" type="button">Start Recording</button>
         <button id="stopBtn" type="button" disabled>Stop</button>
