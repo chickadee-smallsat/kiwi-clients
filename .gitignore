@@ -5,8 +5,6 @@
 **/*.xlsx
 **/*.csv
 node_modules
+dist
 plotly-client/web/3d
-plotly-client/kiwi-3d/dist
-plotly-app/node_modules
-plotly-app/dist
 plotly-app/resources/bin
