@@ -1,5 +1,5 @@
 {
-  "name": "plotly-client-electron",
+  "name": "kiwi-frontend",
   "version": "0.1.0",
   "private": true,
   "description": "Electron wrapper for the plotly-client Rust server",
@@ -15,7 +15,10 @@
     "dist": "npm run build:rust && npm run prepare:bin && electron-builder",
     "dist:linux": "npm run build:rust && npm run prepare:bin && electron-builder --linux AppImage",
     "dist:win": "npm run build:rust && npm run prepare:bin && electron-builder --win nsis",
-    "dist:mac": "npm run build:rust && npm run prepare:bin && electron-builder --mac dmg zip"
+    "dist:win:ci": "npm run build:rust && npm run prepare:bin && electron-builder --win nsis --x64",
+    "dist:win:ci:arm64": "npm run build:rust && npm run prepare:bin && electron-builder --win nsis --arm64",
+    "dist:mac": "npm run build:rust && npm run prepare:bin && electron-builder --mac dmg zip",
+    "dist:mac:ci": "npm run build:rust && npm run prepare:bin && electron-builder --mac dmg"
   },
   "devDependencies": {
     "electron": "^41.2.0",
