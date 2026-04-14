@@ -46,6 +46,10 @@
   const open3dBtn = document.getElementById('open3dBtn');
   const imu3dFrame = document.getElementById('imu3dFrame');
 
+  const splitRoot = document.getElementById('kiwi-split-root');
+  const splitter = document.getElementById('kiwi-splitter');
+  const rightPane = document.getElementById('kiwi-right-pane');
+
   const params = new URLSearchParams(location.search);
   const deviceKey = params.get('src') || 'all';
   const devicePort = deviceKey === 'all' ? null : Number(deviceKey);
@@ -70,13 +74,24 @@
   let uiStreams = new Set();
 
   const FRAME_MS = 33;
+  const RESYNC_MS = 1000;
   let pending = [];
   let lastFrameMs = 0;
+  let lastResyncMs = 0;
 
   const draw = {
     accel: { ts: [], x: [], y: [], z: [], mag: [], theta: [] },
     gyro: { ts: [], x: [], y: [], z: [], mag: [] },
     mag: { ts: [], x: [], y: [], z: [], mag: [], theta: [], phi: [] },
+    temp: { ts: [], v: [] },
+    pressure: { ts: [], v: [] },
+    altitude: { ts: [], v: [] },
+  };
+
+  const store = {
+    accel: { ts: [], x: [], y: [], z: [], mag: [] },
+    gyro: { ts: [], x: [], y: [], z: [], mag: [] },
+    mag: { ts: [], x: [], y: [], z: [], mag: [] },
     temp: { ts: [], v: [] },
     pressure: { ts: [], v: [] },
     altitude: { ts: [], v: [] },
@@ -120,7 +135,7 @@
 
   function fmtTime(ms) {
     if (!ms) return '-';
-    return new Date(ms).toLocaleTimeString();
+    return new Date(ms).toLocaleTimeString('en-GB', { hour12: false });
   }
 
   function updateLastSeen() {
@@ -241,6 +256,14 @@
     colorblind: ['#0072B2', '#E69F00', '#009E73', '#D55E00', '#CC79A7', '#56B4E9'],
   };
 
+  function currentTheme() {
+    return themeSelect?.value || localStorage.getItem('theme') || 'dark';
+  }
+
+  function currentPalette() {
+    return paletteSelect?.value || localStorage.getItem('palette') || 'default';
+  }
+
   function applyTheme(theme) {
     document.body.classList.toggle('light', theme === 'light');
     document.body.classList.toggle('dark', theme !== 'light');
@@ -266,11 +289,7 @@
 
     function applyVector(div) {
       if (!div) return;
-      Plotly.restyle(
-        div,
-        { line: [{ color: colors[0] }, { color: colors[1] }, { color: colors[2] }, { color: colors[3] }] },
-        [0, 1, 2, 3]
-      );
+      Plotly.restyle(div, { line: [{ color: colors[0] }, { color: colors[1] }, { color: colors[2] }, { color: colors[3] }] }, [0, 1, 2, 3]);
     }
 
     function applyScalar(div, color) {
@@ -300,7 +319,7 @@
     margin: { l: 52, r: 12, t: 16, b: 40 },
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
-    xaxis: { title: '', showgrid: true, zeroline: false, tickfont: { size: 13 }, titlefont: { size: 14 } },
+    xaxis: { title: 'Time (s)', showgrid: true, zeroline: false, tickfont: { size: 13 }, titlefont: { size: 14 } },
     yaxis: { title: '', showgrid: true, zeroline: false, tickfont: { size: 13 }, titlefont: { size: 14 } },
     showlegend: true,
     legend: { orientation: 'h', font: { size: 13 } },
@@ -311,10 +330,10 @@
 
   function initVectorPlot(div, title) {
     const traces = [
-      { name: 'x', mode: 'lines', x: [], y: [] },
-      { name: 'y', mode: 'lines', x: [], y: [] },
-      { name: 'z', mode: 'lines', x: [], y: [] },
-      { name: 'mag', mode: 'lines', x: [], y: [] },
+      { name: 'X', mode: 'lines', x: [], y: [] },
+      { name: 'Y', mode: 'lines', x: [], y: [] },
+      { name: 'Z', mode: 'lines', x: [], y: [] },
+      { name: '|R|', mode: 'lines', x: [], y: [] },
     ];
     const layout = structuredClone(baseLayout);
     layout.yaxis.title = title;
@@ -328,12 +347,12 @@
     Plotly.newPlot(div, traces, layout, config);
   }
 
-  if (accelDiv) initVectorPlot(accelDiv, 'accel');
-  if (gyroDiv) initVectorPlot(gyroDiv, 'gyro');
-  if (magDiv) initVectorPlot(magDiv, 'mag');
-  if (tempDiv) initScalarPlot(tempDiv, 'temp');
-  if (pressureDiv) initScalarPlot(pressureDiv, 'pressure');
-  if (altitudeDiv) initScalarPlot(altitudeDiv, 'altitude');
+  if (accelDiv) initVectorPlot(accelDiv, 'g');
+  if (gyroDiv) initVectorPlot(gyroDiv, '°/s');
+  if (magDiv) initVectorPlot(magDiv, 'μT');
+  if (tempDiv) initScalarPlot(tempDiv, '°C');
+  if (pressureDiv) initScalarPlot(pressureDiv, 'hPa');
+  if (altitudeDiv) initScalarPlot(altitudeDiv, 'm');
 
   if (boardNameEl && board) {
     boardNameEl.textContent = board;
@@ -363,7 +382,7 @@
 
   function updateValuePanel(item) {
     if (!isVectorSensor(item.sensor)) return;
-    if (tEl) tEl.textContent = fmtTime(item.ts_ms);
+    if (tEl) tEl.textContent = `${item.ts_s.toFixed(3)} s`;
     if (xEl) xEl.textContent = item.x.toFixed(3);
     if (yEl) yEl.textContent = item.y.toFixed(3);
     if (zEl) zEl.textContent = item.z.toFixed(3);
@@ -382,23 +401,39 @@
     }
     if (paused) return;
 
-    const ts = item.ts_ms;
-
     if (item.sensor === 'accel' && shouldDraw('accel') && plotVisible(accelDiv)) {
-      draw.accel.ts.push(ts);
+      store.accel.ts.push(item.ts_s);
+      store.accel.x.push(item.x);
+      store.accel.y.push(item.y);
+      store.accel.z.push(item.z);
+      store.accel.mag.push(item.mag);
+
+      draw.accel.ts.push(item.ts_s);
       draw.accel.x.push(item.x);
       draw.accel.y.push(item.y);
       draw.accel.z.push(item.z);
       draw.accel.mag.push(item.mag);
       draw.accel.theta.push(item.theta_deg);
     } else if (item.sensor === 'gyro' && shouldDraw('gyro') && plotVisible(gyroDiv)) {
-      draw.gyro.ts.push(ts);
+      store.gyro.ts.push(item.ts_s);
+      store.gyro.x.push(item.x);
+      store.gyro.y.push(item.y);
+      store.gyro.z.push(item.z);
+      store.gyro.mag.push(item.mag);
+
+      draw.gyro.ts.push(item.ts_s);
       draw.gyro.x.push(item.x);
       draw.gyro.y.push(item.y);
       draw.gyro.z.push(item.z);
       draw.gyro.mag.push(item.mag);
     } else if (item.sensor === 'mag' && shouldDraw('mag') && plotVisible(magDiv)) {
-      draw.mag.ts.push(ts);
+      store.mag.ts.push(item.ts_s);
+      store.mag.x.push(item.x);
+      store.mag.y.push(item.y);
+      store.mag.z.push(item.z);
+      store.mag.mag.push(item.mag);
+
+      draw.mag.ts.push(item.ts_s);
       draw.mag.x.push(item.x);
       draw.mag.y.push(item.y);
       draw.mag.z.push(item.z);
@@ -406,13 +441,22 @@
       draw.mag.theta.push(item.theta_deg);
       draw.mag.phi.push(item.phi_deg);
     } else if (item.sensor === 'temp' && shouldDraw('temp') && plotVisible(tempDiv)) {
-      draw.temp.ts.push(ts);
+      store.temp.ts.push(item.ts_s);
+      store.temp.v.push(item.value);
+
+      draw.temp.ts.push(item.ts_s);
       draw.temp.v.push(item.value);
     } else if (item.sensor === 'pressure' && shouldDraw('pressure') && plotVisible(pressureDiv)) {
-      draw.pressure.ts.push(ts);
+      store.pressure.ts.push(item.ts_s);
+      store.pressure.v.push(item.value);
+
+      draw.pressure.ts.push(item.ts_s);
       draw.pressure.v.push(item.value);
     } else if (item.sensor === 'altitude' && shouldDraw('altitude') && plotVisible(altitudeDiv)) {
-      draw.altitude.ts.push(ts);
+      store.altitude.ts.push(item.ts_s);
+      store.altitude.v.push(item.value);
+
+      draw.altitude.ts.push(item.ts_s);
       draw.altitude.v.push(item.value);
     }
   }
@@ -436,13 +480,260 @@
     if (imu3dFrame.getAttribute('src') !== next) imu3dFrame.setAttribute('src', next);
   }
 
+  function initRightPaneResize() {
+    if (!splitRoot || !splitter || !rightPane) return;
+
+    const key = 'kiwi.rightPaneWidth';
+    const minW = 320;
+    const maxW = 820;
+
+    const saved = Number(localStorage.getItem(key));
+    if (Number.isFinite(saved)) {
+      const w = Math.max(minW, Math.min(maxW, saved));
+      splitRoot.style.setProperty('--kiwi-right-w', `${w}px`);
+    }
+
+    let dragging = false;
+    let startX = 0;
+    let startW = 0;
+
+    function onDown(e) {
+      dragging = true;
+      startX = e.clientX;
+      startW = rightPane.getBoundingClientRect().width;
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp, { once: true });
+    }
+
+    function onMove(e) {
+      if (!dragging) return;
+      const dx = startX - e.clientX;
+      let w = startW + dx;
+      w = Math.max(minW, Math.min(maxW, w));
+      splitRoot.style.setProperty('--kiwi-right-w', `${w}px`);
+
+      if (accelDiv) Plotly.Plots.resize(accelDiv);
+      if (gyroDiv) Plotly.Plots.resize(gyroDiv);
+      if (magDiv) Plotly.Plots.resize(magDiv);
+      if (tempDiv) Plotly.Plots.resize(tempDiv);
+      if (pressureDiv) Plotly.Plots.resize(pressureDiv);
+      if (altitudeDiv) Plotly.Plots.resize(altitudeDiv);
+    }
+
+    function onUp() {
+      dragging = false;
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('mousemove', onMove);
+      const w = rightPane.getBoundingClientRect().width;
+      localStorage.setItem(key, String(Math.round(w)));
+      window.dispatchEvent(new Event('resize'));
+    }
+
+    splitter.addEventListener('mousedown', onDown);
+  }
+
+  function clearAccelDraw() {
+    draw.accel.ts.length = 0;
+    draw.accel.x.length = 0;
+    draw.accel.y.length = 0;
+    draw.accel.z.length = 0;
+    draw.accel.mag.length = 0;
+    draw.accel.theta.length = 0;
+  }
+
+  function clearGyroDraw() {
+    draw.gyro.ts.length = 0;
+    draw.gyro.x.length = 0;
+    draw.gyro.y.length = 0;
+    draw.gyro.z.length = 0;
+    draw.gyro.mag.length = 0;
+  }
+
+  function clearMagDraw() {
+    draw.mag.ts.length = 0;
+    draw.mag.x.length = 0;
+    draw.mag.y.length = 0;
+    draw.mag.z.length = 0;
+    draw.mag.mag.length = 0;
+    draw.mag.theta.length = 0;
+    draw.mag.phi.length = 0;
+  }
+
+  function clearTempDraw() {
+    draw.temp.ts.length = 0;
+    draw.temp.v.length = 0;
+  }
+
+  function clearPressureDraw() {
+    draw.pressure.ts.length = 0;
+    draw.pressure.v.length = 0;
+  }
+
+  function clearAltitudeDraw() {
+    draw.altitude.ts.length = 0;
+    draw.altitude.v.length = 0;
+  }
+
+  function trimVectorStore(storeObj) {
+    if (!storeObj.ts.length) return null;
+    const latest = storeObj.ts[storeObj.ts.length - 1];
+    const cutoff = latest - Math.max(windowSec * 3, 30);
+    let idx = 0;
+    while (idx < storeObj.ts.length && storeObj.ts[idx] < cutoff) idx++;
+    if (idx > 0) {
+      storeObj.ts.splice(0, idx);
+      storeObj.x.splice(0, idx);
+      storeObj.y.splice(0, idx);
+      storeObj.z.splice(0, idx);
+      storeObj.mag.splice(0, idx);
+    }
+    return latest;
+  }
+
+  function trimScalarStore(storeObj) {
+    if (!storeObj.ts.length) return null;
+    const latest = storeObj.ts[storeObj.ts.length - 1];
+    const cutoff = latest - Math.max(windowSec * 3, 30);
+    let idx = 0;
+    while (idx < storeObj.ts.length && storeObj.ts[idx] < cutoff) idx++;
+    if (idx > 0) {
+      storeObj.ts.splice(0, idx);
+      storeObj.v.splice(0, idx);
+    }
+    return latest;
+  }
+
+  function selectVectorWindow(storeObj) {
+    if (!storeObj.ts.length) return null;
+    const latest = storeObj.ts[storeObj.ts.length - 1];
+    const cutoff = latest - windowSec;
+    let idx = 0;
+    while (idx < storeObj.ts.length && storeObj.ts[idx] < cutoff) idx++;
+    return {
+      latest,
+      ts: storeObj.ts.slice(idx),
+      x: storeObj.x.slice(idx),
+      y: storeObj.y.slice(idx),
+      z: storeObj.z.slice(idx),
+      mag: storeObj.mag.slice(idx),
+    };
+  }
+
+  function selectScalarWindow(storeObj) {
+    if (!storeObj.ts.length) return null;
+    const latest = storeObj.ts[storeObj.ts.length - 1];
+    const cutoff = latest - windowSec;
+    let idx = 0;
+    while (idx < storeObj.ts.length && storeObj.ts[idx] < cutoff) idx++;
+    return {
+      latest,
+      ts: storeObj.ts.slice(idx),
+      v: storeObj.v.slice(idx),
+    };
+  }
+
+  function resyncVector(div, selected) {
+    if (!div || !selected) return;
+    Plotly.restyle(div, {
+      x: [selected.ts, selected.ts, selected.ts, selected.ts],
+      y: [selected.x, selected.y, selected.z, selected.mag]
+    }, [0, 1, 2, 3]);
+    Plotly.relayout(div, { 'xaxis.range': [selected.latest - windowSec, selected.latest] });
+  }
+
+  function resyncScalar(div, selected) {
+    if (!div || !selected) return;
+    Plotly.restyle(div, {
+      x: [selected.ts],
+      y: [selected.v]
+    }, [0]);
+    Plotly.relayout(div, { 'xaxis.range': [selected.latest - windowSec, selected.latest] });
+  }
+
+  function flush() {
+    if (accelDiv && draw.accel.ts.length) {
+      const latest = draw.accel.ts[draw.accel.ts.length - 1];
+      Plotly.extendTraces(
+        accelDiv,
+        { x: [draw.accel.ts, draw.accel.ts, draw.accel.ts, draw.accel.ts], y: [draw.accel.x, draw.accel.y, draw.accel.z, draw.accel.mag] },
+        [0, 1, 2, 3]
+      );
+      Plotly.relayout(accelDiv, { 'xaxis.range': [latest - windowSec, latest] });
+      clearAccelDraw();
+    }
+
+    if (gyroDiv && draw.gyro.ts.length) {
+      const latest = draw.gyro.ts[draw.gyro.ts.length - 1];
+      Plotly.extendTraces(
+        gyroDiv,
+        { x: [draw.gyro.ts, draw.gyro.ts, draw.gyro.ts, draw.gyro.ts], y: [draw.gyro.x, draw.gyro.y, draw.gyro.z, draw.gyro.mag] },
+        [0, 1, 2, 3]
+      );
+      Plotly.relayout(gyroDiv, { 'xaxis.range': [latest - windowSec, latest] });
+      clearGyroDraw();
+    }
+
+    if (magDiv && draw.mag.ts.length) {
+      const latest = draw.mag.ts[draw.mag.ts.length - 1];
+      Plotly.extendTraces(
+        magDiv,
+        { x: [draw.mag.ts, draw.mag.ts, draw.mag.ts, draw.mag.ts], y: [draw.mag.x, draw.mag.y, draw.mag.z, draw.mag.mag] },
+        [0, 1, 2, 3]
+      );
+      Plotly.relayout(magDiv, { 'xaxis.range': [latest - windowSec, latest] });
+      clearMagDraw();
+    }
+
+    if (tempDiv && draw.temp.ts.length) {
+      const latest = draw.temp.ts[draw.temp.ts.length - 1];
+      Plotly.extendTraces(tempDiv, { x: [draw.temp.ts], y: [draw.temp.v] }, [0]);
+      Plotly.relayout(tempDiv, { 'xaxis.range': [latest - windowSec, latest] });
+      clearTempDraw();
+    }
+
+    if (pressureDiv && draw.pressure.ts.length) {
+      const latest = draw.pressure.ts[draw.pressure.ts.length - 1];
+      Plotly.extendTraces(pressureDiv, { x: [draw.pressure.ts], y: [draw.pressure.v] }, [0]);
+      Plotly.relayout(pressureDiv, { 'xaxis.range': [latest - windowSec, latest] });
+      clearPressureDraw();
+    }
+
+    if (altitudeDiv && draw.altitude.ts.length) {
+      const latest = draw.altitude.ts[draw.altitude.ts.length - 1];
+      Plotly.extendTraces(altitudeDiv, { x: [draw.altitude.ts], y: [draw.altitude.v] }, [0]);
+      Plotly.relayout(altitudeDiv, { 'xaxis.range': [latest - windowSec, latest] });
+      clearAltitudeDraw();
+    }
+  }
+
+  function resyncPlots() {
+    trimVectorStore(store.accel);
+    trimVectorStore(store.gyro);
+    trimVectorStore(store.mag);
+    trimScalarStore(store.temp);
+    trimScalarStore(store.pressure);
+    trimScalarStore(store.altitude);
+
+    resyncVector(accelDiv, selectVectorWindow(store.accel));
+    resyncVector(gyroDiv, selectVectorWindow(store.gyro));
+    resyncVector(magDiv, selectVectorWindow(store.mag));
+    resyncScalar(tempDiv, selectScalarWindow(store.temp));
+    resyncScalar(pressureDiv, selectScalarWindow(store.pressure));
+    resyncScalar(altitudeDiv, selectScalarWindow(store.altitude));
+  }
+
   applySettings();
   updateRecorderUI();
   initThemeAndPalette();
   sync3DFrame();
+  initRightPaneResize();
 
   windowInput?.addEventListener('change', () => {
     applySettings();
+    resyncPlots();
     bufferedPoints = 0;
     setConn('ok', `connected (${deviceKey})`);
   });
@@ -562,13 +853,10 @@
   if (bufCountEl) bufCountEl.textContent = '0';
 
   const workerSrc = `
-    function normalizeTimestampToMs(t) {
+    function normalizeTimestampToSec(t) {
       const n = Number(t);
-      if (!Number.isFinite(n)) return Date.now();
-      if (n > 1e18) return Math.round(n / 1e6);
-      if (n > 1e15) return Math.round(n / 1e3);
-      if (n > 1e12) return Math.round(n);
-      return Math.round(n * 1000);
+      if (!Number.isFinite(n)) return 0;
+      return n / 1000000;
     }
 
     function safeNum(v) {
@@ -578,6 +866,19 @@
 
     function isVectorSensor(s) {
       return s === 'accel' || s === 'gyro' || s === 'mag';
+    }
+
+    function remapVector(type, x, y, z) {
+      if (type === 'accel') {
+        return { x: y, y: x, z: -z };
+      }
+      if (type === 'gyro') {
+        return { x: x, y: y, z: z };
+      }
+      if (type === 'mag') {
+        return { x: x, y: y, z: z };
+      }
+      return { x, y, z };
     }
 
     function magnitude(x, y, z) {
@@ -597,24 +898,27 @@
 
     function normalizeItem(raw) {
       const type = (raw.sensor ?? '').toString().toLowerCase();
-      const ts_ms = normalizeTimestampToMs(raw.ts);
+      const ts_s = normalizeTimestampToSec(raw.ts);
+      const ts_ms = Math.round(ts_s * 1000);
 
       if (isVectorSensor(type)) {
-        const x = safeNum(raw.x);
-        const y = safeNum(raw.y);
-        const z = safeNum(raw.z);
-        if (x === null || y === null || z === null) return null;
+        const rx = safeNum(raw.x);
+        const ry = safeNum(raw.y);
+        const rz = safeNum(raw.z);
+        if (rx === null || ry === null || rz === null) return null;
 
-        const mag = magnitude(x, y, z);
-        const ang = anglesDeg(x, y, z);
+        const v = remapVector(type, rx, ry, rz);
 
-        return { sensor: type, ts_ms, x, y, z, mag, theta_deg: ang.theta_deg, phi_deg: ang.phi_deg, value: null };
+        const mag = magnitude(v.x, v.y, v.z);
+        const ang = anglesDeg(v.x, v.y, v.z);
+
+        return { sensor: type, ts_s, ts_ms, x: v.x, y: v.y, z: v.z, mag, theta_deg: ang.theta_deg, phi_deg: ang.phi_deg, value: null };
       }
 
       if (type === 'temp' || type === 'pressure' || type === 'altitude') {
         const value = safeNum(raw.value);
         if (value === null) return null;
-        return { sensor: type, ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
+        return { sensor: type, ts_s, ts_ms, x: null, y: null, z: null, mag: null, theta_deg: null, phi_deg: null, value };
       }
 
       return null;
@@ -699,107 +1003,6 @@
     setConn('bad', 'disconnected (auto-retrying…)');
   };
 
-  function clearAccelDraw() {
-    draw.accel.ts.length = 0;
-    draw.accel.x.length = 0;
-    draw.accel.y.length = 0;
-    draw.accel.z.length = 0;
-    draw.accel.mag.length = 0;
-    draw.accel.theta.length = 0;
-  }
-
-  function clearGyroDraw() {
-    draw.gyro.ts.length = 0;
-    draw.gyro.x.length = 0;
-    draw.gyro.y.length = 0;
-    draw.gyro.z.length = 0;
-    draw.gyro.mag.length = 0;
-  }
-
-  function clearMagDraw() {
-    draw.mag.ts.length = 0;
-    draw.mag.x.length = 0;
-    draw.mag.y.length = 0;
-    draw.mag.z.length = 0;
-    draw.mag.mag.length = 0;
-    draw.mag.theta.length = 0;
-    draw.mag.phi.length = 0;
-  }
-
-  function clearTempDraw() {
-    draw.temp.ts.length = 0;
-    draw.temp.v.length = 0;
-  }
-
-  function clearPressureDraw() {
-    draw.pressure.ts.length = 0;
-    draw.pressure.v.length = 0;
-  }
-
-  function clearAltitudeDraw() {
-    draw.altitude.ts.length = 0;
-    draw.altitude.v.length = 0;
-  }
-
-  function flush() {
-    if (accelDiv && draw.accel.ts.length) {
-      Plotly.extendTraces(
-        accelDiv,
-        { x: [draw.accel.ts, draw.accel.ts, draw.accel.ts, draw.accel.ts], y: [draw.accel.x, draw.accel.y, draw.accel.z, draw.accel.mag] },
-        [0, 1, 2, 3],
-        maxPoints
-      );
-      clearAccelDraw();
-    } else if (!accelDiv) {
-      clearAccelDraw();
-    }
-
-    if (gyroDiv && draw.gyro.ts.length) {
-      Plotly.extendTraces(
-        gyroDiv,
-        { x: [draw.gyro.ts, draw.gyro.ts, draw.gyro.ts, draw.gyro.ts], y: [draw.gyro.x, draw.gyro.y, draw.gyro.z, draw.gyro.mag] },
-        [0, 1, 2, 3],
-        maxPoints
-      );
-      clearGyroDraw();
-    } else if (!gyroDiv) {
-      clearGyroDraw();
-    }
-
-    if (magDiv && draw.mag.ts.length) {
-      Plotly.extendTraces(
-        magDiv,
-        { x: [draw.mag.ts, draw.mag.ts, draw.mag.ts, draw.mag.ts], y: [draw.mag.x, draw.mag.y, draw.mag.z, draw.mag.mag] },
-        [0, 1, 2, 3],
-        maxPoints
-      );
-      clearMagDraw();
-    } else if (!magDiv) {
-      clearMagDraw();
-    }
-
-    if (tempDiv && draw.temp.ts.length) {
-      Plotly.extendTraces(tempDiv, { x: [draw.temp.ts], y: [draw.temp.v] }, [0], maxPoints);
-      clearTempDraw();
-    } else if (!tempDiv) {
-      clearTempDraw();
-    }
-
-    if (pressureDiv && draw.pressure.ts.length) {
-      Plotly.extendTraces(pressureDiv, { x: [draw.pressure.ts], y: [draw.pressure.v] }, [0], maxPoints);
-      clearPressureDraw();
-    } else if (!pressureDiv) {
-      clearPressureDraw();
-    }
-
-    if (altitudeDiv && draw.altitude.ts.length) {
-      Plotly.extendTraces(altitudeDiv, { x: [draw.altitude.ts], y: [draw.altitude.v] }, [0], maxPoints);
-      clearAltitudeDraw();
-    } else if (!altitudeDiv) {
-      clearAltitudeDraw();
-    }
-  }
-
   function frame(now) {
     if (now - lastFrameMs >= FRAME_MS) {
       lastFrameMs = now;
@@ -817,6 +1020,11 @@
         }
 
         flush();
+
+        if (now - lastResyncMs >= RESYNC_MS) {
+          resyncPlots();
+          lastResyncMs = now;
+        }
 
         if (lastVector) updateValuePanel(lastVector);
 

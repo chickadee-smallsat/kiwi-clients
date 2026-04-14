@@ -1,0 +1,53 @@
+name: build-electron
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: linux
+            dist_script: dist:linux
+            artifact_path: plotly-app/dist/*.AppImage
+          - os: windows-latest
+            artifact_name: windows
+            dist_script: dist:win
+            artifact_path: plotly-app/dist/*.exe
+          - os: macos-latest
+            artifact_name: macos
+            dist_script: dist:mac
+            artifact_path: |
+              plotly-app/dist/*.dmg
+              plotly-app/dist/*.zip
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: plotly-app/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node dependencies
+        run: npm --prefix plotly-app ci
+
+      - name: Build Electron package
+        run: npm --prefix plotly-app run ${{ matrix.dist_script }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plotly-client-${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error

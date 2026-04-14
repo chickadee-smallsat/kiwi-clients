@@ -4,3 +4,7 @@
 **/__pycache__
 **/*.xlsx
 **/*.csv
+node_modules
+dist
+plotly-client/web/3d
+plotly-app/resources/bin
