@@ -12,7 +12,7 @@ This app wraps the Rust `plotly-client` web server in an Electron desktop shell.
 From repository root:
 
 ```bash
-cd electron-app
+cd plotly-app
 npm install
 npm run dev
 ```
@@ -20,18 +20,18 @@ npm run dev
 `npm run dev` does the following:
 
 1. Builds Rust release binary: `cargo build --release -p plotly-client`
-2. Copies binary into `electron-app/resources/bin/`
+2. Copies binary into `plotly-app/resources/bin/`
 3. Launches Electron and points it at the local server
 
 ## Packaging
 
 ```bash
-cd electron-app
+cd plotly-app
 npm install
 npm run dist:linux
 ```
 
-This produces a Linux AppImage under `electron-app/dist/`.
+This produces a Linux AppImage under `plotly-app/dist/`.
 
 Platform-specific build commands:
 
