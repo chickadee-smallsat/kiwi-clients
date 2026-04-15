@@ -9,7 +9,8 @@ fn main() {
         .status()
         .expect("Failed to run npm build");
 
-    if (!status.success()) {
+    if !status.success() {
         panic!("Frontend build failed");
     }
 }
+

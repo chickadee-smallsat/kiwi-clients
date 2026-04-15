@@ -91,14 +91,14 @@
       dashBtn.setAttribute('aria-label', `Open dashboard for device ${port}`);
       dashBtn.addEventListener('click', () => {
         const url = `/dashboard.html?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
-        window.open(url, '_blank', 'noopener,noreferrer');
+        window.location.href = url;
       });
 
       const view3dBtn = makeBtn(`3D ${port}`);
       view3dBtn.setAttribute('aria-label', `Open 3D view for device ${port}`);
       view3dBtn.addEventListener('click', () => {
         const url = `/3d/?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
-        window.open(url, '_blank', 'noopener,noreferrer');
+        window.location.href = url;
       });
 
       row.appendChild(dashBtn);

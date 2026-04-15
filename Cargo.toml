@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["udp-dummy-server", "plotly-client"]
+members = ["udp-dummy-server", "plotly-client", "kiwi-desktop/src-tauri", "kiwi-core"]
 
 [workspace.dependencies]
 kiwi-measurements = { version = "0.1", default-features = false }
+
