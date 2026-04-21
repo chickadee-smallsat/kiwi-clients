@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use actix_web::rt::time::interval;
 use actix_web_lab::{
@@ -19,11 +23,10 @@ struct BroadcasterInner {
     clients: Vec<mpsc::Sender<sse::Event>>,
     device_clients: HashMap<u16, Vec<mpsc::Sender<sse::Event>>>,
     device_list_clients: Vec<mpsc::Sender<sse::Event>>,
-    known_devices: HashMap<u16, ()>,
+    known_devices: HashMap<u16, Instant>,
 }
 
 impl Broadcaster {
-    /// Constructs new broadcaster and spawns ping loop.
     pub fn create() -> Arc<Self> {
         let this = Arc::new(Broadcaster {
             inner: Mutex::new(BroadcasterInner::default()),
@@ -34,8 +37,6 @@ impl Broadcaster {
         this
     }
 
-    /// Pings clients every 10 seconds to see if they are alive and remove them from the broadcast
-    /// list if not.
     fn spawn_ping(this: Arc<Self>) {
         actix_web::rt::spawn(async move {
             let mut interval = interval(Duration::from_secs(10));
@@ -47,7 +48,6 @@ impl Broadcaster {
         });
     }
 
-    /// Removes all non-responsive clients from broadcast list.
     async fn remove_stale_clients(&self) {
         let (clients, device_clients, device_list_clients) = {
             let inner = self.inner.lock();
@@ -103,7 +103,6 @@ impl Broadcaster {
         inner.device_list_clients = ok_device_list_clients;
     }
 
-    /// Registers client with broadcaster, returning an SSE response body.
     pub async fn new_client(&self) -> Sse<InfallibleStream<ReceiverStream<sse::Event>>> {
         let (tx, rx) = mpsc::channel(10);
         self.inner.lock().clients.push(tx);
@@ -126,21 +125,32 @@ impl Broadcaster {
         Sse::from_infallible_receiver(rx)
     }
 
+    fn prune_stale_devices_locked(inner: &mut BroadcasterInner) {
+        let now = Instant::now();
+        inner
+            .known_devices
+            .retain(|_, last_seen| now.duration_since(*last_seen) <= Duration::from_secs(5));
+    }
+
     pub fn device_seen(&self, port: u16) -> bool {
         let mut inner = self.inner.lock();
-        if inner.known_devices.contains_key(&port) {
-            return false;
-        }
-        inner.known_devices.insert(port, ());
-        true
+        Self::prune_stale_devices_locked(&mut inner);
+        let is_new = !inner.known_devices.contains_key(&port);
+        inner.known_devices.insert(port, Instant::now());
+        is_new
     }
 
     pub fn known_ports(&self) -> Vec<u16> {
-        self.inner.lock().known_devices.keys().copied().collect()
+        let mut inner = self.inner.lock();
+        Self::prune_stale_devices_locked(&mut inner);
+        let mut ports: Vec<u16> = inner.known_devices.keys().copied().collect();
+        ports.sort_unstable();
+        ports
     }
 
     pub async fn register_port(&self, port: u16) {
-        if !self.device_seen(port) {
+        let is_new = self.device_seen(port);
+        if !is_new {
             return;
         }
         let ports = self.known_ports();
@@ -149,8 +159,6 @@ impl Broadcaster {
         }
     }
 
-    /// Broadcasts `msg` to all clients.
-    #[allow(dead_code)]
     pub async fn broadcast(&self, msg: &str) {
         let clients = self.inner.lock().clients.clone();
 
@@ -158,8 +166,6 @@ impl Broadcaster {
             .iter()
             .map(|client| client.send(sse::Data::new(msg).into()));
 
-        // try to send to all clients, ignoring failures
-        // disconnected clients will get swept up by `remove_stale_clients`
         let _ = future::join_all(send_futures).await;
     }
 

@@ -110,11 +110,11 @@
     activateTab('devices');
   }
 
-  function openDeviceTab(port, url) {
-    const key = String(port);
+  function openDeviceTab(key, labelText, url, titleText) {
+    const tabKey = String(key);
 
-    if (tabs.has(key)) {
-      activateTab(key);
+    if (tabs.has(tabKey)) {
+      activateTab(tabKey);
       return;
     }
 
@@ -122,38 +122,38 @@
     tab.className = 'tab';
 
     const label = document.createElement('span');
-    label.textContent = `Device ${port}`;
+    label.textContent = labelText;
 
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'tabClose';
-    close.setAttribute('aria-label', `Close device ${port}`);
+    close.setAttribute('aria-label', `Close ${labelText}`);
     close.textContent = 'x';
 
     tab.appendChild(label);
     tab.appendChild(close);
 
     tab.addEventListener('click', () => {
-      activateTab(key);
+      activateTab(tabKey);
     });
 
     close.addEventListener('click', (e) => {
       e.stopPropagation();
-      removeTab(key);
+      removeTab(tabKey);
     });
 
     const frame = document.createElement('iframe');
     frame.className = 'tabContent';
     frame.src = url;
-    frame.title = `Device ${port} dashboard`;
+    frame.title = titleText;
     frame.loading = 'lazy';
     frame.referrerPolicy = 'no-referrer';
 
     tabBar.appendChild(tab);
     contentArea.appendChild(frame);
-    tabs.set(key, { tab, frame });
+    tabs.set(tabKey, { tab, frame });
 
-    activateTab(key);
+    activateTab(tabKey);
   }
 
   function render() {
@@ -173,14 +173,15 @@
       dashBtn.setAttribute('aria-label', `Open dashboard for device ${port}`);
       dashBtn.addEventListener('click', () => {
         const url = `/dashboard.html?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
-        openDeviceTab(port, url);
+        openDeviceTab(port, `Device ${port}`, url, `Device ${port} dashboard`);
       });
 
       const view3dBtn = makeBtn(`3D ${port}`);
       view3dBtn.setAttribute('aria-label', `Open 3D view for device ${port}`);
       view3dBtn.addEventListener('click', () => {
+        const key = `${port}-3d`;
         const url = `/3d/?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
-        openDeviceTab(`${port}-3d`, url);
+        openDeviceTab(key, `3D ${port}`, url, `Device ${port} 3D view`);
       });
 
       row.appendChild(dashBtn);
@@ -194,11 +195,17 @@
     render();
   }
 
+  function setPorts(ports) {
+    devices.clear();
+    for (const p of ports) devices.add(String(p));
+    render();
+  }
+
   function fetchDevicesOnce() {
     return fetch('/devices')
       .then((r) => r.json())
       .then((ports) => {
-        if (Array.isArray(ports)) addPorts(ports);
+        if (Array.isArray(ports)) setPorts(ports);
       })
       .catch(() => {});
   }

@@ -13,183 +13,151 @@
     <p>Live UDP → Rust (Actix) → SSE → Browser · Per-device dashboard · Excel export</p>
   </header>
 
-  <main class="wrapSingle">
-    <section class="card scrollCard">
-      <div class="topBar">
+  <main class="wrap" id="kiwi-split-root">
+    <section class="card scrollCard" id="kiwi-left-pane">
+      <div class="row space">
+        <div class="row">
+          <span class="pill" id="connPill">
+            <span class="dot" id="connDot"></span>
+            <span id="connText">connecting…</span>
+          </span>
+          <span class="pill">buffer: <span id="bufCount">0</span>/<span id="bufMax">0</span></span>
+          <span class="pill">reconnects: <span id="reconnects">0</span></span>
+          <span class="pill">last seen: <span id="lastSeen">-</span></span>
+        </div>
         <div class="row">
           <button id="pauseBtn" type="button">Pause</button>
           <button id="recordBtn" type="button">Start Recording</button>
           <button id="stopBtn" type="button" disabled>Stop</button>
           <button id="exportBtn" type="button" disabled>Export Excel</button>
         </div>
+      </div>
 
-        <details class="menu topMenu" id="topMenu">
-          <summary aria-label="Open dashboard menu">☰</summary>
+      <div class="controls">
+        <details class="menu" id="streamMenu">
+          <summary>Streams</summary>
           <div class="menuBody">
-            <div class="menuSection">
-              <span class="menuSectionTitle">Status</span>
-              <div class="menuStatus">
-                <span class="pill" id="connPill">
-                  <span class="dot" id="connDot"></span>
-                  <span id="connText">connecting…</span>
-                </span>
-                <span class="pill">buffer: <span id="bufCount">0</span>/<span id="bufMax">0</span></span>
-                <span class="pill">reconnects: <span id="reconnects">0</span></span>
-                <span class="pill">last seen: <span id="lastSeen">-</span></span>
-                <span class="pill">recorded samples: <span id="recCount">0</span></span>
-              </div>
+            <div class="menuActions">
+              <button id="selectAllBtn" type="button">Select all</button>
+              <button id="clearAllBtn" type="button">Clear</button>
+              <span class="menuHint" id="streamHint">All</span>
             </div>
 
-            <div class="menuSection">
-              <span class="menuSectionTitle">Streams</span>
-              <details class="menu" id="streamMenu" open>
-                <summary>Streams</summary>
-                <div class="menuBody">
-                  <div class="menuActions">
-                    <button id="selectAllBtn" type="button">Select all</button>
-                    <button id="clearAllBtn" type="button">Clear</button>
-                    <span class="menuHint" id="streamHint">All</span>
-                  </div>
-
-                  <div id="streamChecks" class="checks">
-                    <label class="check"><input type="checkbox" value="accel" checked /> Accelerometer</label>
-                    <label class="check"><input type="checkbox" value="gyro" checked /> Gyroscope</label>
-                    <label class="check"><input type="checkbox" value="mag" checked /> Magnetometer</label>
-                    <label class="check"><input type="checkbox" value="temp" checked /> Temperature</label>
-                    <label class="check"><input type="checkbox" value="pressure" checked /> Pressure</label>
-                    <label class="check"><input type="checkbox" value="altitude" checked /> Altitude</label>
-                  </div>
-
-                  <select id="streamSelect" multiple style="display:none">
-                    <option value="accel" selected>accel</option>
-                    <option value="gyro" selected>gyro</option>
-                    <option value="mag" selected>mag</option>
-                    <option value="temp" selected>temp</option>
-                    <option value="pressure" selected>pressure</option>
-                    <option value="altitude" selected>altitude</option>
-                  </select>
-                </div>
-              </details>
+            <div id="streamChecks" class="checks">
+              <label class="check"><input type="checkbox" value="accel" checked /> Accelerometer</label>
+              <label class="check"><input type="checkbox" value="gyro" checked /> Gyroscope</label>
+              <label class="check"><input type="checkbox" value="mag" checked /> Magnetometer</label>
+              <label class="check"><input type="checkbox" value="temp" checked /> Temperature</label>
+              <label class="check"><input type="checkbox" value="pressure" checked /> Pressure</label>
+              <label class="check"><input type="checkbox" value="altitude" checked /> Altitude</label>
             </div>
 
-            <div class="menuSection">
-              <span class="menuSectionTitle">Settings</span>
-              <div class="menuSettingsGrid">
-                <label>
-                  Window (sec)
-                  <input id="windowSec" type="number" min="1" max="10" step="1" value="2" />
-                </label>
-
-                <label>
-                  Rate (Hz)
-                  <input id="rateHz" type="number" min="1" max="240" step="1" value="60" />
-                </label>
-
-                <label>
-                  Theme
-                  <select id="themeSelect">
-                    <option value="dark">Dark</option>
-                    <option value="light">Light</option>
-                  </select>
-                </label>
-
-                <label>
-                  Palette
-                  <select id="paletteSelect">
-                    <option value="default">Default</option>
-                    <option value="colorblind">Color-blind safe</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-
-            <div class="menuSection">
-              <span class="menuSectionTitle">Panels</span>
-              <label class="check"><input type="checkbox" id="liveValuesToggle" /> Show live values panel</label>
-            </div>
+            <select id="streamSelect" multiple style="display:none">
+              <option value="accel" selected>accel</option>
+              <option value="gyro" selected>gyro</option>
+              <option value="mag" selected>mag</option>
+              <option value="temp" selected>temp</option>
+              <option value="pressure" selected>pressure</option>
+              <option value="altitude" selected>altitude</option>
+            </select>
           </div>
         </details>
+
+        <label>
+          Window (sec)
+          <input id="windowSec" type="number" min="1" max="10" step="1" value="2" />
+        </label>
+
+        <label>
+          Rate (Hz)
+          <input id="rateHz" type="number" min="1" max="240" step="1" value="60" />
+        </label>
+
+        <label>
+          Theme
+          <select id="themeSelect">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </label>
+
+        <label>
+          Palette
+          <select id="paletteSelect">
+            <option value="default">Default</option>
+            <option value="colorblind">Color-blind safe</option>
+          </select>
+        </label>
       </div>
 
-      <div id="dashboardGrid" class="dashboardGrid">
-        <div class="dashboardPanel" id="panel-accel" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340">
-          <details class="plotDetails" open data-stream="accel">
-            <summary>Accelerometer (X, Y, Z)</summary>
-            <div class="plotWrap"><div id="accelPlot"></div></div>
-          </details>
-        </div>
+      <details class="plotDetails" open data-stream="accel">
+        <summary>Accelerometer (X, Y, Z)</summary>
+        <div class="plotWrap"><div id="accelPlot"></div></div>
+      </details>
 
-        <div class="dashboardPanel" id="panel-gyro" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340">
-          <details class="plotDetails" open data-stream="gyro">
-            <summary>Gyroscope (X, Y, Z)</summary>
-            <div class="plotWrap"><div id="gyroPlot"></div></div>
-          </details>
-        </div>
+      <details class="plotDetails" open data-stream="gyro">
+        <summary>Gyroscope (X, Y, Z)</summary>
+        <div class="plotWrap"><div id="gyroPlot"></div></div>
+      </details>
 
-        <div class="dashboardPanel" id="panel-mag" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340">
-          <details class="plotDetails" open data-stream="mag">
-            <summary>Magnetometer (X, Y, Z)</summary>
-            <div class="plotWrap"><div id="magPlot"></div></div>
-          </details>
-        </div>
+      <details class="plotDetails" open data-stream="mag">
+        <summary>Magnetometer (X, Y, Z)</summary>
+        <div class="plotWrap"><div id="magPlot"></div></div>
+      </details>
 
-        <div class="dashboardPanel" id="panel-temp" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300">
-          <details class="plotDetails" open data-stream="temp">
-            <summary>Temperature</summary>
-            <div class="plotWrap"><div id="tempPlot"></div></div>
-          </details>
-        </div>
+      <details class="plotDetails" open data-stream="temp">
+        <summary>Temperature</summary>
+        <div class="plotWrap"><div id="tempPlot"></div></div>
+      </details>
 
-        <div class="dashboardPanel" id="panel-pressure" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300">
-          <details class="plotDetails" open data-stream="pressure">
-            <summary>Pressure</summary>
-            <div class="plotWrap"><div id="pressurePlot"></div></div>
-          </details>
-        </div>
+      <details class="plotDetails" open data-stream="pressure">
+        <summary>Pressure</summary>
+        <div class="plotWrap"><div id="pressurePlot"></div></div>
+      </details>
 
-        <div class="dashboardPanel" id="panel-altitude" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300">
-          <details class="plotDetails" open data-stream="altitude">
-            <summary>Altitude</summary>
-            <div class="plotWrap"><div id="altitudePlot"></div></div>
-          </details>
-        </div>
+      <details class="plotDetails" open data-stream="altitude">
+        <summary>Altitude</summary>
+        <div class="plotWrap"><div id="altitudePlot"></div></div>
+      </details>
+    </section>
 
-        <div class="dashboardPanel" id="panel-3d" data-default-cols="5" data-min-cols="3" data-max-cols="12" data-default-height="430">
-          <div class="panelBlock">
-            <div class="btnRow" style="margin-bottom:10px;">
-              <button id="open3dBtn" type="button">Open 3D View</button>
-            </div>
+    <div id="kiwi-splitter" title="Drag to resize"></div>
 
-            <div id="imu3dWrap">
-              <iframe
-                id="imu3dFrame"
-                title="3D IMU View"
-                src="/3d/?embed=1"
-                loading="lazy"
-                referrerpolicy="no-referrer"
-                allow="fullscreen"
-              ></iframe>
-            </div>
-          </div>
-        </div>
-
-        <div class="dashboardPanel" id="panel-values" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="320" style="display:none;">
-          <div class="panelBlock">
-            <details class="miniDetails" id="dialStats" open>
-              <summary>Live values</summary>
-              <div class="kvs">
-                <div class="kv"><span>time</span><span class="mono" id="t">-</span></div>
-                <div class="kv"><span>x</span><span class="mono" id="x">-</span></div>
-                <div class="kv"><span>y</span><span class="mono" id="y">-</span></div>
-                <div class="kv"><span>z</span><span class="mono" id="z">-</span></div>
-                <div class="kv"><span>magnitude</span><span class="mono" id="mag">-</span></div>
-                <div class="kv"><span>theta (deg)</span><span class="mono" id="theta">-</span></div>
-                <div class="kv"><span>phi (deg)</span><span class="mono" id="phi">-</span></div>
-              </div>
-            </details>
-          </div>
-        </div>
+    <section class="card stickyCard" id="kiwi-right-pane">
+      <div class="btnRow" style="margin-bottom: 10px;">
+        <button id="open3dBtn" type="button">Open 3D View</button>
       </div>
+
+      <div id="imu3dWrap" style="width:100%; height:min(520px,55vh); border-radius:12px; overflow:hidden;">
+        <iframe
+          id="imu3dFrame"
+          title="3D IMU View"
+          src="/3d/?embed=1"
+          style="width:100%; height:100%; border:0; display:block;"
+          loading="lazy"
+          referrerpolicy="no-referrer"
+          allow="fullscreen"
+        ></iframe>
+      </div>
+
+      <details class="miniDetails" id="dialStats" style="margin-top: 10px;">
+        <summary>Show live values</summary>
+        <div class="kvs">
+          <div class="kv"><span>time</span><span class="mono" id="t">-</span></div>
+          <div class="kv"><span>x</span><span class="mono" id="x">-</span></div>
+          <div class="kv"><span>y</span><span class="mono" id="y">-</span></div>
+          <div class="kv"><span>z</span><span class="mono" id="z">-</span></div>
+          <div class="kv"><span>magnitude</span><span class="mono" id="mag">-</span></div>
+          <div class="kv"><span>theta (deg)</span><span class="mono" id="theta">-</span></div>
+          <div class="kv"><span>phi (deg)</span><span class="mono" id="phi">-</span></div>
+          <div class="kv"><span>recorded samples</span><span class="mono" id="recCount">0</span></div>
+        </div>
+      </details>
+
+      <p class="small">
+        Excel export stores raw incoming values only. Sheets:
+        <span class="mono">Accel, Gyro, Mag, Baro</span>
+      </p>
     </section>
   </main>
 
