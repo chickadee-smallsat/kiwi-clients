@@ -55,6 +55,11 @@ header{display:none}
   min-height:0;
 }
 
+.wrapSingle{
+  width:min(1400px,calc(100% - 24px));
+  margin:12px auto 24px;
+}
+
 @media (max-width:1100px){
   .wrap{flex-direction:column}
 }
@@ -133,6 +138,73 @@ body.light #kiwi-splitter:hover::before{
 
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .row.space{justify-content:space-between}
+
+.topBar{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:12px;
+}
+
+.topMenu{
+  margin-left:auto;
+}
+
+.topMenu > summary{
+  min-width:44px;
+  text-align:center;
+  font-size:18px;
+  line-height:1;
+}
+
+.menuSection{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.menuSection + .menuSection{
+  margin-top:12px;
+  padding-top:12px;
+  border-top:1px solid var(--border);
+}
+
+.menuSectionTitle{
+  color:var(--muted);
+  font-size:12px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+
+.menuStatus{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+
+.menuControls{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+.menuSettingsGrid{
+  display:grid;
+  gap:10px;
+}
+
+.menuSettingsGrid label{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  color:var(--muted);
+  background:var(--surface);
+  border:1px solid var(--border);
+  padding:8px 10px;
+  border-radius:12px;
+}
 
 .pill{
   display:inline-flex;
@@ -248,11 +320,19 @@ details.menu > summary::-webkit-details-marker{display:none}
 .check input{accent-color:#7aa2ff}
 
 .plotDetails{
-  margin-top:10px;
+  margin-top:0;
   border:1px solid var(--border);
   border-radius:14px;
   background:var(--surface);
   overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  flex:1 1 auto;
+  min-height:0;
+}
+
+.plotDetails[open]{
+  height:100%;
 }
 
 .plotDetails > summary{
@@ -260,14 +340,28 @@ details.menu > summary::-webkit-details-marker{display:none}
   user-select:none;
   padding:10px 12px;
   color:var(--text);
+  flex:0 0 auto;
 }
 .plotDetails > summary::-webkit-details-marker{display:none}
 
-.plotWrap{padding:8px 10px}
-.plotWrap > div{width:100%}
+.plotWrap{
+  padding:8px 10px;
+  flex:1 1 auto;
+  min-height:0;
+  height:100%;
+  display:flex;
+  flex-direction:column;
+}
+
+.plotWrap > div{
+  width:100%;
+  height:100%;
+  min-height:220px;
+  flex:1 1 auto;
+}
 
 .miniDetails{
-  margin-top:10px;
+  margin-top:0;
   border:1px solid var(--border);
   border-radius:14px;
   background:var(--surface);
@@ -308,7 +402,8 @@ details.menu > summary::-webkit-details-marker{display:none}
 
 #imu3dWrap{
   width:100%;
-  height:min(520px,55vh);
+  height:100%;
+  min-height:260px;
   border-radius:16px;
   overflow:hidden;
   border:1px solid var(--border);
@@ -319,4 +414,230 @@ details.menu > summary::-webkit-details-marker{display:none}
   height:100%;
   border:0;
   display:block;
+}
+
+.tabBar{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  padding:10px 12px;
+  border-bottom:1px solid var(--border);
+  background:var(--surface);
+  overflow-x:auto;
+}
+
+.tab{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 12px;
+  border-radius:12px;
+  border:1px solid var(--border2);
+  background:var(--ctrl-bg);
+  color:var(--text);
+  cursor:pointer;
+  white-space:nowrap;
+}
+
+.tab.active{
+  background:var(--ctrl-bg2);
+}
+
+.tabClose{
+  padding:0;
+  min-width:18px;
+  width:18px;
+  height:18px;
+  border:none;
+  border-radius:999px;
+  background:transparent;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1;
+}
+
+.tabClose:hover{
+  background:var(--ctrl-bg2);
+  color:var(--text);
+}
+
+.contentArea{
+  padding:0;
+}
+
+.tabContent{
+  display:none;
+  width:100%;
+  height:calc(100vh - 58px);
+  border:0;
+}
+
+.tabContent.active{
+  display:block;
+}
+
+.dashboardGrid{
+  display:grid;
+  grid-template-columns:repeat(12,minmax(0,1fr));
+  grid-auto-flow:dense;
+  gap:12px;
+  align-items:start;
+}
+
+.dashboardPanel{
+  grid-column:span var(--col-span,4);
+  min-width:0;
+  height:var(--panel-height,320px);
+  min-height:240px;
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  transition:box-shadow .15s ease, transform .12s ease;
+}
+
+.dashboardPanel.dragging{
+  opacity:.96;
+  box-shadow:0 22px 50px rgba(0,0,0,.35);
+  z-index:1000;
+}
+
+.dashboardPlaceholder{
+  grid-column:span var(--col-span,4);
+  height:var(--panel-height,320px);
+  min-height:240px;
+  border:1px dashed var(--border2);
+  border-radius:16px;
+  background:var(--ctrl-bg);
+}
+
+.panelChrome{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  padding:8px 12px;
+  margin-bottom:8px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  background:var(--surface);
+  color:var(--muted);
+  cursor:grab;
+  user-select:none;
+  min-height:38px;
+}
+
+.panelChrome:active{
+  cursor:grabbing;
+}
+
+.panelGrip{
+  letter-spacing:2px;
+  font-weight:700;
+}
+
+.panelContent{
+  flex:1 1 auto;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+}
+
+.panelContent > *{
+  flex:1 1 auto;
+  min-height:0;
+}
+
+.dashboardPanel .plotDetails,
+.dashboardPanel .miniDetails,
+.dashboardPanel .panelBlock{
+  height:100%;
+  min-height:0;
+}
+
+.panelBlock{
+  padding:12px;
+  border:1px solid var(--border);
+  border-radius:14px;
+  background:var(--surface);
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  height:100%;
+  flex:1 1 auto;
+}
+
+.panelResize{
+  position:absolute;
+  z-index:3;
+}
+
+.panelResizeE{
+  top:0;
+  right:-4px;
+  width:12px;
+  height:100%;
+  cursor:ew-resize;
+}
+
+.panelResizeS{
+  left:0;
+  bottom:-4px;
+  width:100%;
+  height:12px;
+  cursor:ns-resize;
+}
+
+.panelResizeSE{
+  right:-4px;
+  bottom:-4px;
+  width:18px;
+  height:18px;
+  cursor:nwse-resize;
+}
+
+.panelResizeSE::before{
+  content:"";
+  position:absolute;
+  right:4px;
+  bottom:4px;
+  width:10px;
+  height:10px;
+  border-right:2px solid var(--border2);
+  border-bottom:2px solid var(--border2);
+}
+
+#panel-values .panelBlock{
+  gap:10px;
+}
+
+.js-plotly-plot,
+.js-plotly-plot .plot-container,
+.js-plotly-plot .svg-container{
+  width:100% !important;
+  height:100% !important;
+}
+
+@media (max-width:1100px){
+  .dashboardGrid{
+    grid-template-columns:repeat(6,minmax(0,1fr));
+  }
+}
+
+@media (max-width:700px){
+  .topBar{
+    align-items:stretch;
+  }
+
+  .dashboardGrid{
+    grid-template-columns:1fr;
+  }
+
+  .dashboardPanel,
+  .dashboardPlaceholder{
+    grid-column:span 1 !important;
+  }
+
+  .panelResizeE{
+    display:none;
+  }
 }

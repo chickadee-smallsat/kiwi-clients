@@ -46,9 +46,10 @@
   const open3dBtn = document.getElementById('open3dBtn');
   const imu3dFrame = document.getElementById('imu3dFrame');
 
-  const splitRoot = document.getElementById('kiwi-split-root');
-  const splitter = document.getElementById('kiwi-splitter');
-  const rightPane = document.getElementById('kiwi-right-pane');
+  const dashboardGrid = document.getElementById('dashboardGrid');
+  const dashboardPanels = Array.from(document.querySelectorAll('.dashboardPanel'));
+  const panelValues = document.getElementById('panel-values');
+  const liveValuesToggle = document.getElementById('liveValuesToggle');
 
   const params = new URLSearchParams(location.search);
   const deviceKey = params.get('src') || 'all';
@@ -79,6 +80,14 @@
   let lastFrameMs = 0;
   let lastResyncMs = 0;
 
+  const PANEL_STATE_KEY = `kiwi.dashboard.layout.${deviceKey}`;
+  const LIVE_VALUES_KEY = `kiwi.dashboard.liveValues.${deviceKey}`;
+  const GRID_COLS = () => {
+    if (!dashboardGrid) return 12;
+    const cols = getComputedStyle(dashboardGrid).gridTemplateColumns.split(' ').length;
+    return Math.max(1, cols);
+  };
+
   const draw = {
     accel: { ts: [], x: [], y: [], z: [], mag: [], theta: [] },
     gyro: { ts: [], x: [], y: [], z: [], mag: [] },
@@ -98,7 +107,7 @@
   };
 
   const dialStats = document.getElementById('dialStats');
-  if (dialStats) dialStats.open = false;
+  if (dialStats) dialStats.open = true;
 
   function toInt(v, fallback) {
     const n = Number(v);
@@ -178,6 +187,8 @@
 
   function plotVisible(div) {
     if (!div) return false;
+    const panel = div.closest('.dashboardPanel');
+    if (panel && panel.style.display === 'none') return false;
     const d = div.closest('details');
     if (!d) return true;
     if (d.style && d.style.display === 'none') return false;
@@ -193,6 +204,15 @@
     else streamHintEl.textContent = `${selected} selected`;
   }
 
+  function applyLiveValuesVisibility() {
+    const visible = !!liveValuesToggle?.checked;
+    if (panelValues) {
+      panelValues.style.display = visible ? 'flex' : 'none';
+    }
+    localStorage.setItem(LIVE_VALUES_KEY, visible ? '1' : '0');
+    schedulePlotResize();
+  }
+
   function applyStreamVisibility() {
     const selected = uiStreams;
     if (!plotDetailsEls.length) {
@@ -202,10 +222,17 @@
 
     plotDetailsEls.forEach(d => {
       const s = d.getAttribute('data-stream');
-      d.style.display = selected.size === 0 ? 'none' : (selected.has(s) ? '' : 'none');
+      const panel = d.closest('.dashboardPanel');
+      if (panel) {
+        panel.style.display = selected.size === 0 ? 'none' : (selected.has(s) ? 'flex' : 'none');
+      } else {
+        d.style.display = selected.size === 0 ? 'none' : (selected.has(s) ? '' : 'none');
+      }
     });
 
+    applyLiveValuesVisibility();
     applyStreamHint();
+    schedulePlotResize();
   }
 
   function syncSelectFromChecks() {
@@ -255,14 +282,6 @@
     default: ['#7aa2ff', '#7dffcb', '#ffb86c', '#ff6b81', '#c792ea', '#ffd166'],
     colorblind: ['#0072B2', '#E69F00', '#009E73', '#D55E00', '#CC79A7', '#56B4E9'],
   };
-
-  function currentTheme() {
-    return themeSelect?.value || localStorage.getItem('theme') || 'dark';
-  }
-
-  function currentPalette() {
-    return paletteSelect?.value || localStorage.getItem('palette') || 'default';
-  }
 
   function applyTheme(theme) {
     document.body.classList.toggle('light', theme === 'light');
@@ -347,6 +366,342 @@
     Plotly.newPlot(div, traces, layout, config);
   }
 
+  function resizePlot(div) {
+    if (!div) return;
+
+    const panel = div.closest('.dashboardPanel');
+    if (!panel || panel.style.display === 'none') return;
+
+    const details = div.closest('details');
+    if (details && !details.open) return;
+
+    const wrap = div.closest('.plotWrap');
+    if (!wrap) return;
+
+    const summary = details ? details.querySelector('summary') : null;
+    const panelRect = panel.getBoundingClientRect();
+    const wrapRect = wrap.getBoundingClientRect();
+
+    if (panelRect.width < 40 || panelRect.height < 40) return;
+
+    const wrapStyles = getComputedStyle(wrap);
+    const padX = parseFloat(wrapStyles.paddingLeft || 0) + parseFloat(wrapStyles.paddingRight || 0);
+    const padY = parseFloat(wrapStyles.paddingTop || 0) + parseFloat(wrapStyles.paddingBottom || 0);
+
+    const chrome = panel.querySelector('.panelChrome');
+    const chromeH = chrome ? chrome.getBoundingClientRect().height : 0;
+    const summaryH = summary ? summary.getBoundingClientRect().height : 0;
+
+    const width = Math.max(320, Math.floor(wrapRect.width));
+    const height = Math.max(
+      220,
+      Math.floor(panelRect.height - chromeH - summaryH - padY - 10)
+    );
+
+    wrap.style.height = `${height + padY}px`;
+    div.style.width = `${width}px`;
+    div.style.height = `${height}px`;
+
+    Plotly.relayout(div, {
+      autosize: false,
+      width,
+      height
+    });
+
+    Plotly.Plots.resize(div);
+  }
+
+  function resizeAllPlots() {
+    [accelDiv, gyroDiv, magDiv, tempDiv, pressureDiv, altitudeDiv].forEach((div) => {
+      resizePlot(div);
+    });
+  }
+
+  let resizeTimer = null;
+  function schedulePlotResize() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      requestAnimationFrame(() => {
+        resizeAllPlots();
+      });
+    }, 10);
+  }
+
+  function loadPanelState() {
+    try {
+      return JSON.parse(localStorage.getItem(PANEL_STATE_KEY) || '{}');
+    } catch {
+      return {};
+    }
+  }
+
+  function savePanelState() {
+    const state = {};
+    dashboardPanels.forEach((panel) => {
+      state[panel.id] = {
+        cols: Number(panel.dataset.cols || panel.dataset.defaultCols || 4),
+        height: Number(panel.dataset.height || panel.dataset.defaultHeight || 320),
+      };
+    });
+    state.order = Array.from(dashboardGrid.children)
+      .filter((el) => el.classList.contains('dashboardPanel'))
+      .map((el) => el.id);
+    localStorage.setItem(PANEL_STATE_KEY, JSON.stringify(state));
+  }
+
+  function clampCols(panel, cols) {
+    const maxGridCols = GRID_COLS();
+    const min = Math.max(1, Number(panel.dataset.minCols || 1));
+    const max = Math.min(maxGridCols, Number(panel.dataset.maxCols || maxGridCols));
+    return Math.max(min, Math.min(max, cols));
+  }
+
+  function applyPanelSize(panel, cols, height) {
+    const nextCols = clampCols(panel, cols);
+    const nextHeight = Math.max(240, Math.round(height));
+    panel.dataset.cols = String(nextCols);
+    panel.dataset.height = String(nextHeight);
+    panel.style.setProperty('--col-span', String(nextCols));
+    panel.style.setProperty('--panel-height', `${nextHeight}px`);
+  }
+
+  function getGridMetrics() {
+    if (!dashboardGrid) return { cols: 12, colWidth: 80, gap: 12 };
+    const styles = getComputedStyle(dashboardGrid);
+    const cols = GRID_COLS();
+    const gap = parseFloat(styles.columnGap || styles.gap || '12') || 12;
+    const totalGap = gap * (cols - 1);
+    const colWidth = (dashboardGrid.clientWidth - totalGap) / cols;
+    return { cols, colWidth, gap };
+  }
+
+  function buildPanelChrome(panel) {
+    if (panel.querySelector('.panelChrome')) return;
+
+    const chrome = document.createElement('div');
+    chrome.className = 'panelChrome';
+
+    const grip = document.createElement('span');
+    grip.className = 'panelGrip';
+    grip.textContent = '⋮⋮';
+
+    chrome.appendChild(grip);
+
+    const content = document.createElement('div');
+    content.className = 'panelContent';
+
+    while (panel.firstChild) {
+      content.appendChild(panel.firstChild);
+    }
+
+    panel.appendChild(chrome);
+    panel.appendChild(content);
+
+    const resizeE = document.createElement('div');
+    resizeE.className = 'panelResize panelResizeE';
+    resizeE.dataset.dir = 'e';
+
+    const resizeS = document.createElement('div');
+    resizeS.className = 'panelResize panelResizeS';
+    resizeS.dataset.dir = 's';
+
+    const resizeSE = document.createElement('div');
+    resizeSE.className = 'panelResize panelResizeSE';
+    resizeSE.dataset.dir = 'se';
+
+    panel.appendChild(resizeE);
+    panel.appendChild(resizeS);
+    panel.appendChild(resizeSE);
+  }
+
+  function initPanelLayout() {
+    if (!dashboardGrid || !dashboardPanels.length) return;
+
+    dashboardPanels.forEach(buildPanelChrome);
+
+    const saved = loadPanelState();
+    const order = Array.isArray(saved.order) ? saved.order : [];
+
+    if (order.length) {
+      const lookup = new Map(dashboardPanels.map((panel) => [panel.id, panel]));
+      order.forEach((id) => {
+        const panel = lookup.get(id);
+        if (panel) dashboardGrid.appendChild(panel);
+      });
+    }
+
+    dashboardPanels.forEach((panel) => {
+      const savedPanel = saved[panel.id] || {};
+      applyPanelSize(
+        panel,
+        Number(savedPanel.cols || panel.dataset.defaultCols || 4),
+        Number(savedPanel.height || panel.dataset.defaultHeight || 320)
+      );
+    });
+
+    let dragState = null;
+    let resizeState = null;
+    let placeholder = null;
+
+    function clearDragStyles(panel) {
+      panel.classList.remove('dragging');
+      panel.style.position = '';
+      panel.style.left = '';
+      panel.style.top = '';
+      panel.style.width = '';
+      panel.style.height = '';
+      panel.style.pointerEvents = '';
+      panel.style.zIndex = '';
+    }
+
+    function startDrag(e, panel) {
+      if (e.button !== 0) return;
+      if (resizeState) return;
+
+      const rect = panel.getBoundingClientRect();
+      dragState = {
+        panel,
+        offsetX: e.clientX - rect.left,
+        offsetY: e.clientY - rect.top,
+      };
+
+      placeholder = document.createElement('div');
+      placeholder.className = 'dashboardPlaceholder';
+      placeholder.style.setProperty('--col-span', panel.dataset.cols || panel.dataset.defaultCols || '4');
+      placeholder.style.setProperty('--panel-height', `${rect.height}px`);
+
+      panel.after(placeholder);
+
+      panel.classList.add('dragging');
+      panel.style.position = 'fixed';
+      panel.style.left = `${rect.left}px`;
+      panel.style.top = `${rect.top}px`;
+      panel.style.width = `${rect.width}px`;
+      panel.style.height = `${rect.height}px`;
+      panel.style.pointerEvents = 'none';
+      panel.style.zIndex = '1000';
+
+      window.addEventListener('pointermove', onDragMove);
+      window.addEventListener('pointerup', endDrag, { once: true });
+      e.preventDefault();
+    }
+
+    function onDragMove(e) {
+      if (!dragState) return;
+      const { panel, offsetX, offsetY } = dragState;
+      panel.style.left = `${e.clientX - offsetX}px`;
+      panel.style.top = `${e.clientY - offsetY}px`;
+
+      const hovered = document.elementFromPoint(e.clientX, e.clientY)?.closest('.dashboardPanel');
+      if (hovered && hovered !== panel) {
+        const rect = hovered.getBoundingClientRect();
+        const before = e.clientY < rect.top + rect.height / 2 || e.clientX < rect.left + rect.width / 2;
+        if (before) {
+          hovered.before(placeholder);
+        } else {
+          hovered.after(placeholder);
+        }
+      } else if (!hovered && dashboardGrid.getBoundingClientRect().bottom < e.clientY) {
+        dashboardGrid.appendChild(placeholder);
+      }
+    }
+
+    function endDrag() {
+      if (!dragState) return;
+      const { panel } = dragState;
+      if (placeholder && placeholder.parentNode) {
+        placeholder.replaceWith(panel);
+      }
+      clearDragStyles(panel);
+      placeholder = null;
+      dragState = null;
+      savePanelState();
+      schedulePlotResize();
+      window.removeEventListener('pointermove', onDragMove);
+    }
+
+    function startResize(e, panel, dir) {
+      if (e.button !== 0) return;
+      const rect = panel.getBoundingClientRect();
+      resizeState = {
+        panel,
+        dir,
+        startX: e.clientX,
+        startY: e.clientY,
+        startCols: Number(panel.dataset.cols || panel.dataset.defaultCols || 4),
+        startHeight: rect.height,
+      };
+      window.addEventListener('pointermove', onResizeMove);
+      window.addEventListener('pointerup', endResize, { once: true });
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    function onResizeMove(e) {
+      if (!resizeState) return;
+      const { panel, dir, startX, startY, startCols, startHeight } = resizeState;
+      const { colWidth, gap } = getGridMetrics();
+      let nextCols = startCols;
+      let nextHeight = startHeight;
+
+      if (dir === 'e' || dir === 'se') {
+        const dx = e.clientX - startX;
+        nextCols = Math.round((startCols * colWidth + (startCols - 1) * gap + dx + gap) / (colWidth + gap));
+      }
+
+      if (dir === 's' || dir === 'se') {
+        const dy = e.clientY - startY;
+        nextHeight = startHeight + dy;
+      }
+
+      applyPanelSize(panel, nextCols, nextHeight);
+      schedulePlotResize();
+    }
+
+    function endResize() {
+      if (!resizeState) return;
+      savePanelState();
+      schedulePlotResize();
+      resizeState = null;
+      window.removeEventListener('pointermove', onResizeMove);
+    }
+
+    dashboardPanels.forEach((panel) => {
+      const chrome = panel.querySelector('.panelChrome');
+      chrome?.addEventListener('pointerdown', (e) => startDrag(e, panel));
+
+      panel.querySelectorAll('.panelResize').forEach((handle) => {
+        handle.addEventListener('pointerdown', (e) => startResize(e, panel, handle.dataset.dir));
+      });
+    });
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const plotDivs = entry.target.querySelectorAll('.plotWrap > div');
+          plotDivs.forEach((div) => resizePlot(div));
+        }
+      });
+      dashboardPanels.forEach((panel) => observer.observe(panel));
+    }
+
+    window.addEventListener('resize', () => {
+      dashboardPanels.forEach((panel) => {
+        applyPanelSize(panel, Number(panel.dataset.cols || panel.dataset.defaultCols || 4), Number(panel.dataset.height || panel.dataset.defaultHeight || 320));
+      });
+      schedulePlotResize();
+      savePanelState();
+    });
+
+    plotDetailsEls.forEach((details) => {
+      details.addEventListener('toggle', schedulePlotResize);
+    });
+
+    if (dialStats) dialStats.addEventListener('toggle', schedulePlotResize);
+
+    schedulePlotResize();
+  }
+
   if (accelDiv) initVectorPlot(accelDiv, 'g');
   if (gyroDiv) initVectorPlot(gyroDiv, '°/s');
   if (magDiv) initVectorPlot(magDiv, 'μT');
@@ -360,6 +715,12 @@
   }
 
   uiStreams = getSelectedStreams();
+
+  const savedLiveValues = localStorage.getItem(LIVE_VALUES_KEY);
+  if (liveValuesToggle) {
+    liveValuesToggle.checked = savedLiveValues === '1';
+  }
+
   applyStreamVisibility();
 
   function updateRecorderUI() {
@@ -478,61 +839,6 @@
     const src = devicePort ? String(devicePort) : 'all';
     const next = `/3d/?src=${encodeURIComponent(src)}&embed=1`;
     if (imu3dFrame.getAttribute('src') !== next) imu3dFrame.setAttribute('src', next);
-  }
-
-  function initRightPaneResize() {
-    if (!splitRoot || !splitter || !rightPane) return;
-
-    const key = 'kiwi.rightPaneWidth';
-    const minW = 320;
-    const maxW = 820;
-
-    const saved = Number(localStorage.getItem(key));
-    if (Number.isFinite(saved)) {
-      const w = Math.max(minW, Math.min(maxW, saved));
-      splitRoot.style.setProperty('--kiwi-right-w', `${w}px`);
-    }
-
-    let dragging = false;
-    let startX = 0;
-    let startW = 0;
-
-    function onDown(e) {
-      dragging = true;
-      startX = e.clientX;
-      startW = rightPane.getBoundingClientRect().width;
-      document.body.style.userSelect = 'none';
-      document.body.style.cursor = 'col-resize';
-      window.addEventListener('mousemove', onMove);
-      window.addEventListener('mouseup', onUp, { once: true });
-    }
-
-    function onMove(e) {
-      if (!dragging) return;
-      const dx = startX - e.clientX;
-      let w = startW + dx;
-      w = Math.max(minW, Math.min(maxW, w));
-      splitRoot.style.setProperty('--kiwi-right-w', `${w}px`);
-
-      if (accelDiv) Plotly.Plots.resize(accelDiv);
-      if (gyroDiv) Plotly.Plots.resize(gyroDiv);
-      if (magDiv) Plotly.Plots.resize(magDiv);
-      if (tempDiv) Plotly.Plots.resize(tempDiv);
-      if (pressureDiv) Plotly.Plots.resize(pressureDiv);
-      if (altitudeDiv) Plotly.Plots.resize(altitudeDiv);
-    }
-
-    function onUp() {
-      dragging = false;
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-      window.removeEventListener('mousemove', onMove);
-      const w = rightPane.getBoundingClientRect().width;
-      localStorage.setItem(key, String(Math.round(w)));
-      window.dispatchEvent(new Event('resize'));
-    }
-
-    splitter.addEventListener('mousedown', onDown);
   }
 
   function clearAccelDraw() {
@@ -723,13 +1029,15 @@
     resyncScalar(tempDiv, selectScalarWindow(store.temp));
     resyncScalar(pressureDiv, selectScalarWindow(store.pressure));
     resyncScalar(altitudeDiv, selectScalarWindow(store.altitude));
+
+    schedulePlotResize();
   }
 
   applySettings();
   updateRecorderUI();
   initThemeAndPalette();
   sync3DFrame();
-  initRightPaneResize();
+  initPanelLayout();
 
   windowInput?.addEventListener('change', () => {
     applySettings();
@@ -763,6 +1071,10 @@
     });
   }
 
+  liveValuesToggle?.addEventListener('change', () => {
+    applyLiveValuesVisibility();
+  });
+
   selectAllBtn?.addEventListener('click', () => setAllStreams(true));
   clearAllBtn?.addEventListener('click', () => setAllStreams(false));
 
@@ -771,6 +1083,7 @@
     localStorage.setItem('theme', v);
     applyTheme(v);
     applyThemeToPlots(v);
+    schedulePlotResize();
   });
 
   paletteSelect?.addEventListener('change', () => {
