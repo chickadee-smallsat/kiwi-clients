@@ -1,0 +1,78 @@
+[
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-xxxhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/xml_file_paths.xml.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/xml/file_paths.xml"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-xhdpi_ic_launcher.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-xhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-xxhdpi_ic_launcher_foreground.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-xxhdpi/ic_launcher_foreground.png"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/drawable-v24_ic_launcher_foreground.xml.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/drawable-v24/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-xxhdpi_ic_launcher.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-xxhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-mdpi_ic_launcher.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-mdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/layout_activity_main.xml.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-xhdpi_ic_launcher_foreground.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-xhdpi/ic_launcher_foreground.png"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-mdpi_ic_launcher_foreground.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-mdpi/ic_launcher_foreground.png"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-hdpi_ic_launcher.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-hdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-xxxhdpi_ic_launcher_round.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-xxxhdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-xxxhdpi_ic_launcher_foreground.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-xxxhdpi/ic_launcher_foreground.png"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-mdpi_ic_launcher_round.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-mdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-xhdpi_ic_launcher_round.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-xhdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-xxhdpi_ic_launcher_round.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-xxhdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/drawable_ic_launcher_background.xml.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/drawable/ic_launcher_background.xml"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-hdpi_ic_launcher_round.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-hdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "com.kiwi.mainboard.app-universalRelease-40:/mipmap-hdpi_ic_launcher_foreground.png.flat",
+        "source": "com.kiwi.mainboard.app-main-41:/mipmap-hdpi/ic_launcher_foreground.png"
+    }
+]

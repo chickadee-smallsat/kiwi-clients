@@ -7,50 +7,58 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <header>
-    <h1 id="boardName">Kiwi Sensor Dashboard</h1>
-    <p>Landing page · Devices appear automatically when UDP data arrives</p>
-  </header>
+  <div id="tabBar" class="tabBar">
+    <div class="tab active" data-tab="devices">Devices</div>
+  </div>
 
-  <main class="wrapSingle">
-    <section class="card">
-      <div class="row space">
-        <div class="row">
-          <span class="pill" id="connPill">
-            <span class="dot" id="connDot"></span>
-            <span id="connText">connecting…</span>
-          </span>
-          <span class="pill">devices: <span id="deviceCount">0</span></span>
-        </div>
+  <div id="contentArea" class="contentArea">
+    <div id="devicesView">
+      <header>
+        <h1 id="boardName">Kiwi Sensor Dashboard</h1>
+        <p>Landing page · Devices appear automatically when UDP data arrives</p>
+      </header>
 
-        <div class="row">
-          <label class="inlineLabel">
-            Theme
-            <select id="themeSelect">
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </select>
-          </label>
-        </div>
-      </div>
+      <main class="wrapSingle">
+        <section class="card">
+          <div class="row space">
+            <div class="row">
+              <span class="pill" id="connPill">
+                <span class="dot" id="connDot"></span>
+                <span id="connText">connecting…</span>
+              </span>
+              <span class="pill">devices: <span id="deviceCount">0</span></span>
+            </div>
 
-      <details class="menu" id="deviceMenu" open>
-        <summary>Devices</summary>
-        <div class="menuBody">
-          <div class="menuActions">
-            <input id="deviceSearch" type="search" placeholder="Search device port…" aria-label="Search devices" />
-            <button id="refreshBtn" type="button">Refresh</button>
+            <div class="row">
+              <label class="inlineLabel">
+                Theme
+                <select id="themeSelect">
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                </select>
+              </label>
+            </div>
           </div>
 
-          <div class="deviceList" id="deviceList" role="list"></div>
+          <details class="menu" id="deviceMenu" open>
+            <summary>Devices</summary>
+            <div class="menuBody">
+              <div class="menuActions">
+                <input id="deviceSearch" type="search" placeholder="Search device port…" aria-label="Search devices" />
+                <button id="refreshBtn" type="button">Refresh</button>
+              </div>
 
-          <p class="small" style="margin-top:12px;">
-            Click a device to open its live dashboard in a new tab.
-          </p>
-        </div>
-      </details>
-    </section>
-  </main>
+              <div class="deviceList" id="deviceList" role="list"></div>
+
+              <p class="small" style="margin-top:12px;">
+                Click a device to open its live dashboard in this window.
+              </p>
+            </div>
+          </details>
+        </section>
+      </main>
+    </div>
+  </div>
 
   <script src="/landing.js"></script>
 </body>

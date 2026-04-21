@@ -1,0 +1,4 @@
+#Mon Apr 13 22:05:03 EDT 2026
+base.0=C\:\\kiwi-mainboard-clients-new\\kiwi-desktop\\src-tauri\\gen\\android\\app\\build\\intermediates\\dex\\universalRelease\\minifyUniversalReleaseWithR8\\classes.dex
+renamed.0=classes.dex
+path.0=classes.dex

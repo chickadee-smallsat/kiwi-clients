@@ -6,11 +6,15 @@
   const listEl = document.getElementById('deviceList');
   const themeSelect = document.getElementById('themeSelect');
   const boardNameEl = document.getElementById('boardName');
-
   const deviceSearch = document.getElementById('deviceSearch');
   const refreshBtn = document.getElementById('refreshBtn');
+  const tabBar = document.getElementById('tabBar');
+  const contentArea = document.getElementById('contentArea');
+  const devicesView = document.getElementById('devicesView');
+  const devicesTab = document.querySelector('.tab[data-tab="devices"]');
 
   const devices = new Set();
+  const tabs = new Map();
   let reconnects = 0;
 
   const params = new URLSearchParams(window.location.search);
@@ -74,6 +78,84 @@
     return b;
   }
 
+  function activateTab(key) {
+    document.querySelectorAll('.tab').forEach((el) => el.classList.remove('active'));
+    document.querySelectorAll('.tabContent').forEach((el) => el.classList.remove('active'));
+
+    if (key === 'devices') {
+      if (devicesTab) devicesTab.classList.add('active');
+      if (devicesView) devicesView.style.display = '';
+      return;
+    }
+
+    if (devicesView) devicesView.style.display = 'none';
+
+    const entry = tabs.get(key);
+    if (!entry) {
+      if (devicesTab) devicesTab.classList.add('active');
+      if (devicesView) devicesView.style.display = '';
+      return;
+    }
+
+    entry.tab.classList.add('active');
+    entry.frame.classList.add('active');
+  }
+
+  function removeTab(key) {
+    const entry = tabs.get(key);
+    if (!entry) return;
+    entry.tab.remove();
+    entry.frame.remove();
+    tabs.delete(key);
+    activateTab('devices');
+  }
+
+  function openDeviceTab(port, url) {
+    const key = String(port);
+
+    if (tabs.has(key)) {
+      activateTab(key);
+      return;
+    }
+
+    const tab = document.createElement('div');
+    tab.className = 'tab';
+
+    const label = document.createElement('span');
+    label.textContent = `Device ${port}`;
+
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'tabClose';
+    close.setAttribute('aria-label', `Close device ${port}`);
+    close.textContent = 'x';
+
+    tab.appendChild(label);
+    tab.appendChild(close);
+
+    tab.addEventListener('click', () => {
+      activateTab(key);
+    });
+
+    close.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeTab(key);
+    });
+
+    const frame = document.createElement('iframe');
+    frame.className = 'tabContent';
+    frame.src = url;
+    frame.title = `Device ${port} dashboard`;
+    frame.loading = 'lazy';
+    frame.referrerPolicy = 'no-referrer';
+
+    tabBar.appendChild(tab);
+    contentArea.appendChild(frame);
+    tabs.set(key, { tab, frame });
+
+    activateTab(key);
+  }
+
   function render() {
     if (deviceCountEl) deviceCountEl.textContent = String(devices.size);
     if (!listEl) return;
@@ -91,14 +173,14 @@
       dashBtn.setAttribute('aria-label', `Open dashboard for device ${port}`);
       dashBtn.addEventListener('click', () => {
         const url = `/dashboard.html?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
-        window.open(url, '_blank', 'noopener,noreferrer');
+        openDeviceTab(port, url);
       });
 
       const view3dBtn = makeBtn(`3D ${port}`);
       view3dBtn.setAttribute('aria-label', `Open 3D view for device ${port}`);
       view3dBtn.addEventListener('click', () => {
         const url = `/3d/?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
-        window.open(url, '_blank', 'noopener,noreferrer');
+        openDeviceTab(`${port}-3d`, url);
       });
 
       row.appendChild(dashBtn);
@@ -145,6 +227,12 @@
   if (refreshBtn) {
     refreshBtn.addEventListener('click', () => {
       fetchDevicesOnce();
+    });
+  }
+
+  if (devicesTab) {
+    devicesTab.addEventListener('click', () => {
+      activateTab('devices');
     });
   }
 
