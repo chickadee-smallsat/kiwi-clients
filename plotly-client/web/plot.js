@@ -817,6 +817,37 @@
       });
     });
 
+    const panel3dDetails = document.getElementById('panel3dDetails');
+    if (panel3dDetails) {
+      panel3dDetails.addEventListener('toggle', () => {
+        const panel = panel3dDetails.closest('.dashboardPanel');
+        const isOpen = panel3dDetails.open;
+        if (panel) {
+          panel.classList.toggle('collapsed', !isOpen);
+          if (isOpen) {
+            const h = Number(panel.dataset.height || panel.dataset.defaultHeight || 430);
+            panel.style.setProperty('--panel-height', `${h}px`);
+            sync3DFrame();
+          } else {
+            panel.style.setProperty('--panel-height', 'auto');
+            if (imu3dFrame) imu3dFrame.setAttribute('src', '');
+          }
+          savePanelState();
+        }
+      });
+
+      const saved3d = (loadPanelState())['panel-3d'] || {};
+      if (saved3d.collapsed) {
+        panel3dDetails.open = false;
+        const panel = panel3dDetails.closest('.dashboardPanel');
+        if (panel) {
+          panel.classList.add('collapsed');
+          panel.style.setProperty('--panel-height', 'auto');
+        }
+        if (imu3dFrame) imu3dFrame.setAttribute('src', '');
+      }
+    }
+
     if (dialStats) dialStats.addEventListener('toggle', schedulePlotResize);
 
     schedulePlotResize();
