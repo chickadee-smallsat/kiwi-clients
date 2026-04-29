@@ -89,6 +89,8 @@
     return Math.max(1, cols);
   };
 
+  const GRID_ROW_PX = 8;
+
   const draw = {
     accel: { ts: [], x: [], y: [], z: [], mag: [], theta: [] },
     gyro: { ts: [], x: [], y: [], z: [], mag: [] },
@@ -532,11 +534,26 @@
   function applyPanelSize(panel, cols, height) {
     const nextCols = clampCols(panel, cols);
     const nextHeight = Math.max(240, Math.round(height));
+    const { gap } = getGridMetrics();
+    const span = Math.max(1, Math.ceil((nextHeight + gap) / (GRID_ROW_PX + gap)));
 
     panel.dataset.cols = String(nextCols);
     panel.dataset.height = String(nextHeight);
     panel.style.setProperty('--col-span', String(nextCols));
     panel.style.setProperty('--panel-height', `${nextHeight}px`);
+    panel.style.setProperty('--row-span', String(span));
+  }
+
+  function applyCollapsedPanelSize(panel) {
+    const details = panel.querySelector('details.plotDetails, details.miniDetails');
+    const summary = details ? details.querySelector('summary') : null;
+    const summaryHeight = summary ? summary.getBoundingClientRect().height : 42;
+    const targetHeight = Math.max(42, Math.ceil(summaryHeight + 6));
+    const { gap } = getGridMetrics();
+    const span = Math.max(1, Math.ceil((targetHeight + gap) / (GRID_ROW_PX + gap)));
+
+    panel.style.setProperty('--panel-height', 'auto');
+    panel.style.setProperty('--row-span', String(span));
   }
 
   function getGridMetrics() {
@@ -616,7 +633,7 @@
         if (details) {
           details.open = false;
           panel.classList.add('collapsed');
-          panel.style.setProperty('--panel-height', 'auto');
+          applyCollapsedPanelSize(panel);
         }
       }
     });
@@ -649,6 +666,9 @@
       placeholder.className = 'dashboardPlaceholder';
       placeholder.style.setProperty('--col-span', panel.dataset.cols || panel.dataset.defaultCols || '4');
       placeholder.style.setProperty('--panel-height', `${rect.height}px`);
+      const { gap } = getGridMetrics();
+      const span = Math.max(1, Math.ceil((rect.height + gap) / (GRID_ROW_PX + gap)));
+      placeholder.style.setProperty('--row-span', String(span));
 
       panel.after(placeholder);
 
@@ -851,11 +871,15 @@
 
     window.addEventListener('resize', () => {
       dashboardPanels.forEach(panel => {
-        applyPanelSize(
-          panel,
-          Number(panel.dataset.cols || panel.dataset.defaultCols || 4),
-          Number(panel.dataset.height || panel.dataset.defaultHeight || 320),
-        );
+        if (panel.classList.contains('collapsed')) {
+          applyCollapsedPanelSize(panel);
+        } else {
+          applyPanelSize(
+            panel,
+            Number(panel.dataset.cols || panel.dataset.defaultCols || 4),
+            Number(panel.dataset.height || panel.dataset.defaultHeight || 320),
+          );
+        }
       });
 
       schedulePlotResize();
@@ -870,9 +894,13 @@
           panel.classList.toggle('collapsed', !isOpen);
           if (isOpen) {
             const h = Number(panel.dataset.height || panel.dataset.defaultHeight || 320);
-            panel.style.setProperty('--panel-height', `${h}px`);
+            applyPanelSize(
+              panel,
+              Number(panel.dataset.cols || panel.dataset.defaultCols || 4),
+              h,
+            );
           } else {
-            panel.style.setProperty('--panel-height', 'auto');
+            applyCollapsedPanelSize(panel);
           }
           savePanelState();
         }
@@ -889,10 +917,14 @@
           panel.classList.toggle('collapsed', !isOpen);
           if (isOpen) {
             const h = Number(panel.dataset.height || panel.dataset.defaultHeight || 430);
-            panel.style.setProperty('--panel-height', `${h}px`);
+            applyPanelSize(
+              panel,
+              Number(panel.dataset.cols || panel.dataset.defaultCols || 5),
+              h,
+            );
             sync3DFrame();
           } else {
-            panel.style.setProperty('--panel-height', 'auto');
+            applyCollapsedPanelSize(panel);
             if (imu3dFrame) imu3dFrame.setAttribute('src', '');
           }
           savePanelState();
@@ -905,7 +937,7 @@
         const panel = panel3dDetails.closest('.dashboardPanel');
         if (panel) {
           panel.classList.add('collapsed');
-          panel.style.setProperty('--panel-height', 'auto');
+          applyCollapsedPanelSize(panel);
         }
         if (imu3dFrame) imu3dFrame.setAttribute('src', '');
       }

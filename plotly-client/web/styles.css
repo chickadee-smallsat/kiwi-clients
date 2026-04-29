@@ -613,12 +613,14 @@ body.light .tab.active{
   display:grid;
   grid-template-columns:repeat(12,minmax(0,1fr));
   grid-auto-flow:dense;
+  grid-auto-rows:8px;
   gap:12px;
   align-items:start;
 }
 
 .dashboardPanel{
   grid-column:span var(--col-span,4);
+  grid-row:span var(--row-span,40);
   min-width:0;
   height:var(--panel-height,320px);
   min-height:240px;
@@ -653,8 +655,7 @@ body.light .tab.active{
 
 .dashboardPlaceholder{
   grid-column:span var(--col-span,4);
-  height:var(--panel-height,320px);
-  min-height:240px;
+  grid-row:span var(--row-span,40);
   border:1px dashed var(--border2);
   border-radius:16px;
   background:var(--ctrl-bg);
