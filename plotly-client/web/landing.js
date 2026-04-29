@@ -6,11 +6,15 @@
   const listEl = document.getElementById('deviceList');
   const themeSelect = document.getElementById('themeSelect');
   const boardNameEl = document.getElementById('boardName');
-
   const deviceSearch = document.getElementById('deviceSearch');
   const refreshBtn = document.getElementById('refreshBtn');
+  const tabBar = document.getElementById('tabBar');
+  const contentArea = document.getElementById('contentArea');
+  const devicesView = document.getElementById('devicesView');
+  const devicesTab = document.querySelector('.tab[data-tab="devices"]');
 
   const devices = new Set();
+  const tabs = new Map();
   let reconnects = 0;
 
   const params = new URLSearchParams(window.location.search);
@@ -44,12 +48,14 @@
       connText.style.color = '#bfffe2';
       return;
     }
+
     if (state === 'warn') {
       connDot.style.background = warn;
       connPill.style.borderColor = warn;
       connText.style.color = '#ffe6a8';
       return;
     }
+
     connDot.style.background = bad;
     connPill.style.borderColor = bad;
     connText.style.color = '#ffb8c0';
@@ -74,6 +80,84 @@
     return b;
   }
 
+  function activateTab(key) {
+    document.querySelectorAll('.tab').forEach((el) => el.classList.remove('active'));
+    document.querySelectorAll('.tabContent').forEach((el) => el.classList.remove('active'));
+
+    if (key === 'devices') {
+      if (devicesTab) devicesTab.classList.add('active');
+      if (devicesView) devicesView.style.display = '';
+      return;
+    }
+
+    if (devicesView) devicesView.style.display = 'none';
+
+    const entry = tabs.get(key);
+    if (!entry) {
+      if (devicesTab) devicesTab.classList.add('active');
+      if (devicesView) devicesView.style.display = '';
+      return;
+    }
+
+    entry.tab.classList.add('active');
+    entry.frame.classList.add('active');
+  }
+
+  function removeTab(key) {
+    const entry = tabs.get(key);
+    if (!entry) return;
+    entry.tab.remove();
+    entry.frame.remove();
+    tabs.delete(key);
+    activateTab('devices');
+  }
+
+  function openDeviceTab(key, labelText, url, titleText) {
+    const tabKey = String(key);
+
+    if (tabs.has(tabKey)) {
+      activateTab(tabKey);
+      return;
+    }
+
+    const tab = document.createElement('div');
+    tab.className = 'tab';
+
+    const label = document.createElement('span');
+    label.textContent = labelText;
+
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'tabClose';
+    close.setAttribute('aria-label', `Close ${labelText}`);
+    close.textContent = 'x';
+
+    tab.appendChild(label);
+    tab.appendChild(close);
+
+    tab.addEventListener('click', () => {
+      activateTab(tabKey);
+    });
+
+    close.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeTab(tabKey);
+    });
+
+    const frame = document.createElement('iframe');
+    frame.className = 'tabContent';
+    frame.src = url;
+    frame.title = titleText;
+    frame.loading = 'lazy';
+    frame.referrerPolicy = 'no-referrer';
+
+    tabBar.appendChild(tab);
+    contentArea.appendChild(frame);
+    tabs.set(tabKey, { tab, frame });
+
+    activateTab(tabKey);
+  }
+
   function render() {
     if (deviceCountEl) deviceCountEl.textContent = String(devices.size);
     if (!listEl) return;
@@ -91,14 +175,15 @@
       dashBtn.setAttribute('aria-label', `Open dashboard for device ${port}`);
       dashBtn.addEventListener('click', () => {
         const url = `/dashboard.html?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
-        window.open(url, '_blank', 'noopener,noreferrer');
+        openDeviceTab(port, `Device ${port}`, url, `Device ${port} dashboard`);
       });
 
       const view3dBtn = makeBtn(`3D ${port}`);
       view3dBtn.setAttribute('aria-label', `Open 3D view for device ${port}`);
       view3dBtn.addEventListener('click', () => {
+        const key = `${port}-3d`;
         const url = `/3d/?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
-        window.open(url, '_blank', 'noopener,noreferrer');
+        openDeviceTab(key, `3D ${port}`, url, `Device ${port} 3D view`);
       });
 
       row.appendChild(dashBtn);
@@ -112,14 +197,38 @@
     render();
   }
 
-  function fetchDevicesOnce() {
-    return fetch('/devices')
-      .then((r) => r.json())
-      .then((ports) => {
-        if (Array.isArray(ports)) addPorts(ports);
-      })
-      .catch(() => {});
+  function setPorts(ports) {
+    devices.clear();
+    for (const p of ports) devices.add(String(p));
+    render();
   }
+function fetchDevicesOnce() {
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = 'Refreshing...';
+  }
+
+  return fetch('/devices')
+    .then((r) => r.json())
+    .then((ports) => {
+      if (Array.isArray(ports)) setPorts(ports);
+
+      if (refreshBtn) refreshBtn.textContent = 'Updated';
+
+      setTimeout(() => {
+        if (refreshBtn) {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = 'Refresh';
+        }
+      }, 700);
+    })
+    .catch(() => {
+      if (refreshBtn) {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = 'Retry';
+      }
+    });
+}
 
   initTheme();
 
@@ -148,6 +257,12 @@
     });
   }
 
+  if (devicesTab) {
+    devicesTab.addEventListener('click', () => {
+      activateTab('devices');
+    });
+  }
+
   setConn('warn', 'connecting…');
 
   const es = new EventSource('/devices/events');
@@ -164,7 +279,7 @@
     } catch {
       return;
     }
-    if (Array.isArray(parsed)) addPorts(parsed);
+    if (Array.isArray(parsed)) setPorts(parsed);
   };
 
   es.onerror = () => {

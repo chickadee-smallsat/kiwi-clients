@@ -86,17 +86,19 @@ async fn devices_list(broadcaster: web::Data<Broadcaster>) -> impl Responder {
     web::Json(broadcaster.known_ports())
 }
 
-#[get("/devices/{port}/events")]
+#[get("/devices/{device_id}/events")]
 async fn device_stream(
     broadcaster: web::Data<Broadcaster>,
-    port: web::Path<u16>,
+    device_id: web::Path<String>,
 ) -> impl Responder {
-    #[cfg(debug_assertions)]
-    log::info!("Device SSE client connected for port {}", *port);
-    #[cfg(not(debug_assertions))]
-    log::debug!("Device SSE client connected for port {}", *port);
+    let device_id = device_id.into_inner();
 
-    broadcaster.new_device_client(*port).await
+    #[cfg(debug_assertions)]
+    log::info!("Device SSE client connected for device {}", device_id);
+    #[cfg(not(debug_assertions))]
+    log::debug!("Device SSE client connected for device {}", device_id);
+
+    broadcaster.new_device_client(device_id).await
 }
 
 use clap::Parser;

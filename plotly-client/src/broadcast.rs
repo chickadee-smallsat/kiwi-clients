@@ -17,9 +17,9 @@ pub struct Broadcaster {
 #[derive(Debug, Clone, Default)]
 struct BroadcasterInner {
     clients: Vec<mpsc::Sender<sse::Event>>,
-    device_clients: HashMap<u16, Vec<mpsc::Sender<sse::Event>>>,
+    device_clients: HashMap<String, Vec<mpsc::Sender<sse::Event>>>,
     device_list_clients: Vec<mpsc::Sender<sse::Event>>,
-    known_devices: HashMap<u16, ()>,
+    known_devices: HashMap<String, ()>,
 }
 
 impl Broadcaster {
@@ -69,7 +69,7 @@ impl Broadcaster {
             }
         }
 
-        let mut ok_device_clients: HashMap<u16, Vec<mpsc::Sender<sse::Event>>> = HashMap::new();
+        let mut ok_device_clients: HashMap<String, Vec<mpsc::Sender<sse::Event>>> = HashMap::new();
         for (port, list) in device_clients {
             let mut ok_list = Vec::new();
             for client in list {
@@ -112,7 +112,7 @@ impl Broadcaster {
 
     pub async fn new_device_client(
         &self,
-        port: u16,
+        port: String,
     ) -> Sse<InfallibleStream<ReceiverStream<sse::Event>>> {
         let (tx, rx) = mpsc::channel(10);
         let mut inner = self.inner.lock();
@@ -126,7 +126,7 @@ impl Broadcaster {
         Sse::from_infallible_receiver(rx)
     }
 
-    pub fn device_seen(&self, port: u16) -> bool {
+    pub fn device_seen(&self, port: String) -> bool {
         let mut inner = self.inner.lock();
         if inner.known_devices.contains_key(&port) {
             return false;
@@ -135,11 +135,11 @@ impl Broadcaster {
         true
     }
 
-    pub fn known_ports(&self) -> Vec<u16> {
-        self.inner.lock().known_devices.keys().copied().collect()
+    pub fn known_ports(&self) -> Vec<String> {
+        self.inner.lock().known_devices.keys().cloned().collect()
     }
 
-    pub async fn register_port(&self, port: u16) {
+    pub async fn register_port(&self, port: String) {
         if !self.device_seen(port) {
             return;
         }
@@ -163,7 +163,7 @@ impl Broadcaster {
         let _ = future::join_all(send_futures).await;
     }
 
-    pub async fn broadcast_device(&self, port: u16, msg: &str) {
+    pub async fn broadcast_device(&self, port: String, msg: &str) {
         let clients = self
             .inner
             .lock()
