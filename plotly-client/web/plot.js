@@ -636,16 +636,13 @@
       panel.style.zIndex = '';
     }
 
-    function startDrag(e, panel) {
-      if (e.button !== 0) return;
-      if (resizeState) return;
-
+    function startDragAtPointer(panel, clientX, clientY) {
       const rect = panel.getBoundingClientRect();
 
       dragState = {
         panel,
-        offsetX: e.clientX - rect.left,
-        offsetY: e.clientY - rect.top,
+        offsetX: clientX - rect.left,
+        offsetY: clientY - rect.top,
       };
 
       placeholder = document.createElement('div');
@@ -666,6 +663,13 @@
 
       window.addEventListener('pointermove', onDragMove);
       window.addEventListener('pointerup', endDrag, { once: true });
+    }
+
+    function startDrag(e, panel) {
+      if (e.button !== 0) return;
+      if (resizeState) return;
+
+      startDragAtPointer(panel, e.clientX, e.clientY);
       e.preventDefault();
     }
 
@@ -765,10 +769,69 @@
       window.removeEventListener('pointermove', onResizeMove);
     }
 
-    dashboardPanels.forEach(panel => {
-      const chrome = panel.querySelector('.panelChrome');
+    function canStartPanelDrag(e) {
+      const target = e.target;
+      if (!(target instanceof Element)) return false;
 
-      chrome?.addEventListener('pointerdown', e => startDrag(e, panel));
+      if (target.closest('.panelResize')) return false;
+      if (target.closest('button, input, select, textarea, a, label')) return false;
+      if (target.closest('iframe, #imu3dWrap')) return false;
+
+      // Keep Plotly interactions (zoom/pan/hover) intact.
+      if (target.closest('.js-plotly-plot, .plotly, .plot-container, .modebar, .nsewdrag')) return false;
+
+      return true;
+    }
+
+    function maybeStartSummaryDrag(e, panel) {
+      if (e.button !== 0) return;
+      if (resizeState) return;
+
+      const pointerId = e.pointerId;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const threshold = 6;
+      let dragging = false;
+
+      function cleanup() {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      }
+
+      function onMove(moveEvent) {
+        if (moveEvent.pointerId !== pointerId || dragging) return;
+
+        const dx = Math.abs(moveEvent.clientX - startX);
+        const dy = Math.abs(moveEvent.clientY - startY);
+
+        if (dx + dy < threshold) return;
+
+        dragging = true;
+        cleanup();
+        startDragAtPointer(panel, moveEvent.clientX, moveEvent.clientY);
+        moveEvent.preventDefault();
+      }
+
+      function onUp(upEvent) {
+        if (upEvent.pointerId !== pointerId) return;
+        cleanup();
+      }
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    }
+
+    dashboardPanels.forEach(panel => {
+      panel.addEventListener('pointerdown', e => {
+        const target = e.target;
+        if (target instanceof Element && target.closest('summary')) {
+          maybeStartSummaryDrag(e, panel);
+          return;
+        }
+
+        if (!canStartPanelDrag(e)) return;
+        startDrag(e, panel);
+      });
 
       panel.querySelectorAll('.panelResize').forEach(handle => {
         handle.addEventListener('pointerdown', e => startResize(e, panel, handle.dataset.dir));
