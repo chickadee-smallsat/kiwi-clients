@@ -382,7 +382,7 @@
   }
 
   const baseLayout = {
-    dragmode: false,
+    dragmode: 'zoom',
     margin: { l: 52, r: 12, t: 16, b: 40 },
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
@@ -458,12 +458,10 @@
     const wrapStyles = getComputedStyle(wrap);
     const padY = parseFloat(wrapStyles.paddingTop || 0) + parseFloat(wrapStyles.paddingBottom || 0);
 
-    const chrome = panel.querySelector('.panelChrome');
-    const chromeH = chrome ? chrome.getBoundingClientRect().height : 0;
     const summaryH = summary ? summary.getBoundingClientRect().height : 0;
 
     const width = Math.max(320, Math.floor(wrapRect.width));
-    const height = Math.max(220, Math.floor(panelRect.height - chromeH - summaryH - padY - 10));
+    const height = Math.max(220, Math.floor(panelRect.height - summaryH - padY - 10));
 
     wrap.style.height = `${height + padY}px`;
     div.style.width = `${width}px`;
@@ -508,9 +506,11 @@
     const state = {};
 
     dashboardPanels.forEach(panel => {
+      const details = panel.querySelector('details.plotDetails');
       state[panel.id] = {
         cols: Number(panel.dataset.cols || panel.dataset.defaultCols || 4),
         height: Number(panel.dataset.height || panel.dataset.defaultHeight || 320),
+        collapsed: details ? !details.open : false,
       };
     });
 
@@ -556,12 +556,7 @@
 
     const chrome = document.createElement('div');
     chrome.className = 'panelChrome';
-
-    const grip = document.createElement('span');
-    grip.className = 'panelGrip';
-    grip.textContent = '⋮⋮';
-
-    chrome.appendChild(grip);
+    chrome.textContent = '⋮⋮';
 
     const content = document.createElement('div');
     content.className = 'panelContent';
@@ -615,6 +610,15 @@
         Number(savedPanel.cols || panel.dataset.defaultCols || 4),
         Number(savedPanel.height || panel.dataset.defaultHeight || 320),
       );
+
+      if (savedPanel.collapsed) {
+        const details = panel.querySelector('details.plotDetails');
+        if (details) {
+          details.open = false;
+          panel.classList.add('collapsed');
+          panel.style.setProperty('--panel-height', 'auto');
+        }
+      }
     });
 
     let dragState = null;
@@ -796,7 +800,21 @@
     });
 
     plotDetailsEls.forEach(details => {
-      details.addEventListener('toggle', schedulePlotResize);
+      details.addEventListener('toggle', () => {
+        const panel = details.closest('.dashboardPanel');
+        if (panel) {
+          const isOpen = details.open;
+          panel.classList.toggle('collapsed', !isOpen);
+          if (isOpen) {
+            const h = Number(panel.dataset.height || panel.dataset.defaultHeight || 320);
+            panel.style.setProperty('--panel-height', `${h}px`);
+          } else {
+            panel.style.setProperty('--panel-height', 'auto');
+          }
+          savePanelState();
+        }
+        schedulePlotResize();
+      });
     });
 
     if (dialStats) dialStats.addEventListener('toggle', schedulePlotResize);
