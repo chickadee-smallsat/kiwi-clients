@@ -633,6 +633,18 @@ body.light .tab.active{
   min-height:0;
 }
 
+.dashboardPanel.collapsed .panelContent{
+  flex:0 0 auto;
+}
+
+.dashboardPanel.collapsed .plotDetails,
+.dashboardPanel.collapsed .miniDetails,
+.dashboardPanel.collapsed .panelBlock{
+  height:auto;
+  flex:0 0 auto;
+  min-height:0;
+}
+
 .dashboardPanel.dragging{
   opacity:.96;
   box-shadow:0 22px 50px rgba(0,0,0,.35);
