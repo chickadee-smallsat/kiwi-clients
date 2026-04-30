@@ -83,6 +83,10 @@
     if (key === 'devices') {
       if (devicesTab) devicesTab.classList.add('active');
       if (devicesView) devicesView.style.display = '';
+      // Deactivate all device tab iframes.
+      for (const { frame } of tabs.values()) {
+        try { frame.contentWindow?.postMessage({ type: 'kiwi-tab-active', active: false }, '*'); } catch (_) {}
+      }
       return;
     }
 
@@ -93,6 +97,12 @@
       if (devicesTab) devicesTab.classList.add('active');
       if (devicesView) devicesView.style.display = '';
       return;
+    }
+
+    // Notify all frames; only the newly-active one gets active:true.
+    for (const [k, { frame }] of tabs.entries()) {
+      const isActive = k === key;
+      try { frame.contentWindow?.postMessage({ type: 'kiwi-tab-active', active: isActive }, '*'); } catch (_) {}
     }
 
     entry.tab.classList.add('active');

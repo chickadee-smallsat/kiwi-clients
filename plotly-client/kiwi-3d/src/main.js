@@ -622,8 +622,20 @@ const worldDown = new THREE.Vector3(0, -1, 0);
 
 let lastRenderMs = performance.now();
 
+// Rendering is gated on whether this tab/embed is the active one.
+// The parent landing page sends 'kiwi-tab-active' messages on tab switches.
+// Default true so a standalone window always renders.
+let tabActive = true;
+window.addEventListener('message', (ev) => {
+  if (ev.data?.type === 'kiwi-tab-active') {
+    tabActive = !!ev.data.active;
+  }
+});
+
 function animate() {
   requestAnimationFrame(animate);
+
+  if (!tabActive) return;
 
   if (demo) {
     msgWin += 1;

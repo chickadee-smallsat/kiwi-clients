@@ -1514,6 +1514,16 @@
     const swPort = sw.port;
     swPort.start();
 
+    // Rendering is gated on whether this tab is the active one.
+    // The parent landing page sends 'kiwi-tab-active' messages on tab switches.
+    // Start as active so a standalone window (not inside the tab UI) always renders.
+    let tabActive = true;
+    window.addEventListener('message', (ev) => {
+        if (ev.data?.type === 'kiwi-tab-active') {
+            tabActive = !!ev.data.active;
+        }
+    });
+
     swPort.onmessage = (ev) => {
         const msg = ev.data;
         if (msg.type === 'open') {
@@ -1533,6 +1543,11 @@
     window.addEventListener('pagehide', () => { swPort.postMessage('disconnect'); });
 
     function frame(now) {
+        if (!tabActive) {
+            requestAnimationFrame(frame);
+            return;
+        }
+
         if (now - lastFrameMs >= FRAME_MS) {
             lastFrameMs = now;
 
