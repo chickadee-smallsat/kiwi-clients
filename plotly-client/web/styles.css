@@ -182,13 +182,23 @@ body.light .card{
 
 .topMenu > summary{
   min-width:44px;
+  width:44px;
   height:44px;
   display:flex;
   align-items:center;
   justify-content:center;
   text-align:center;
-  font-size:18px;
+  font-size:26px;
   line-height:1;
+  padding:0 0 6px 0;
+  transition:background .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+
+.topMenu[open] > summary{
+  background:rgba(56,189,248,.18);
+  border-color:rgba(56,189,248,.55);
+  box-shadow:0 0 0 3px rgba(56,189,248,.15);
+  color:#38bdf8;
 }
 
 .menuSection{
@@ -346,11 +356,15 @@ details.menu > summary{
   list-style:none;
   cursor:pointer;
   user-select:none;
-  padding:8px 10px;
   border-radius:12px;
   border:1px solid var(--border);
   background:rgba(16,34,53,.86);
   color:var(--text);
+}
+
+/* nested stream sub-menus get inner padding; topMenu summary does not */
+details.menu:not(.topMenu) > summary{
+  padding:8px 10px;
 }
 
 body.light details.menu > summary{
@@ -372,19 +386,27 @@ body.light .menuBody{
   background:rgba(247,251,253,0.96);
 }
 
-.topMenu .menuBody{
+.topMenu > .menuBody{
   position:absolute;
-  top:52px;
+  top:calc(100% + 6px);
   right:0;
   width:320px;
   max-width:calc(100vw - 24px);
   max-height:calc(100vh - 120px);
-  overflow:auto;
+  overflow-y:auto;
+  overflow-x:hidden;
   z-index:100;
   box-shadow:0 18px 50px rgba(0,0,0,.45);
+  transform-origin:top right;
+  animation:menuMorphIn .18s cubic-bezier(.22,.68,0,1.2) both;
 }
 
-body.light .topMenu .menuBody{
+@keyframes menuMorphIn{
+  from{opacity:0;transform:scale(.94) translateY(-6px);}
+  to  {opacity:1;transform:scale(1)  translateY(0);}
+}
+
+body.light .topMenu > .menuBody{
   box-shadow:0 18px 50px rgba(15,23,42,.16);
 }
 
@@ -596,8 +618,8 @@ body.light .deviceTable tbody tr:hover td{
 
 #imu3dWrap{
   width:100%;
-  height:100%;
-  min-height:260px;
+  flex:1 1 auto;
+  min-height:420px;
   border-radius:16px;
   overflow:hidden;
   border:1px solid var(--border);
