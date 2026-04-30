@@ -10,3 +10,4 @@ kiwi-measurements = { workspace = true, default-features = false, features = [
     "serde",
 ] }
 rand = "0.10"
+heapless = { version = "0.9" }

@@ -36,6 +36,26 @@ struct BroadcasterInner {
     clients: HashMap<u64, ClientEntry>,
     /// Maps device ID → last time a UDP packet was received from that device.
     known_devices: HashMap<String, Instant>,
+    /// Maps device ID → friendly name from the Id measurement packet.
+    device_names: HashMap<String, String>,
+}
+
+/// Device entry returned by the `/devices` endpoint and the `devices` SSE event.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeviceInfo {
+    /// UDP source address (e.g. `"192.168.1.5:8099"`).
+    pub id: String,
+    /// Friendly name from the `Id` measurement, or the address if not yet received.
+    pub name: String,
+}
+
+/// Build the JSON payload for the `devices` SSE event / HTTP response from a locked inner state.
+fn build_devices_json(inner: &BroadcasterInner) -> Option<String> {
+    let entries: Vec<DeviceInfo> = inner.known_devices.keys().map(|id| {
+        let name = inner.device_names.get(id).cloned().unwrap_or_else(|| id.clone());
+        DeviceInfo { id: id.clone(), name }
+    }).collect();
+    serde_json::to_string(&entries).ok()
 }
 
 impl Broadcaster {
@@ -78,8 +98,11 @@ impl Broadcaster {
                     if inner.known_devices.len() == before {
                         continue; // nothing changed
                     }
-                    let devs: Vec<&String> = inner.known_devices.keys().collect();
-                    serde_json::to_string(&devs).ok()
+                    // Also prune names for evicted devices.
+                    let active: std::collections::HashSet<String> =
+                        inner.known_devices.keys().cloned().collect();
+                    inner.device_names.retain(|id, _| active.contains(id));
+                    build_devices_json(&inner)
                 };
                 if let Some(payload) = payload {
                     this.broadcast_device_list(&payload).await;
@@ -123,16 +146,44 @@ impl Broadcaster {
             if !is_new {
                 return; // timestamp refreshed; no broadcast needed
             }
-            let devs: Vec<&String> = inner.known_devices.keys().collect();
-            serde_json::to_string(&devs).ok()
+            build_devices_json(&inner)
         };
         if let Some(payload) = payload {
             self.broadcast_device_list(&payload).await;
         }
     }
 
-    pub async fn known_devices(&self) -> Vec<String> {
-        self.inner.lock().await.known_devices.keys().cloned().collect()
+    /// Records the friendly name for a device from an `Id` measurement packet.
+    /// Broadcasts a `rename` SSE event if the name is new or changed.
+    pub async fn rename_device(&self, device_id: &str, name: &str) {
+        let changed = {
+            let mut inner = self.inner.lock().await;
+            let prev = inner.device_names.get(device_id).map(|s| s.as_str());
+            if prev == Some(name) {
+                false
+            } else {
+                inner.device_names.insert(device_id.to_string(), name.to_string());
+                true
+            }
+        };
+        if !changed {
+            return;
+        }
+        let device_json = serde_json::to_string(device_id).unwrap_or_default();
+        let name_json = serde_json::to_string(name).unwrap_or_default();
+        let msg = format!(r#"{{"device":{device_json},"name":{name_json}}}"#);
+        let inner = self.inner.lock().await;
+        for entry in inner.clients.values() {
+            let _ = entry.tx.try_send(sse::Data::new(msg.as_str()).event("rename").into());
+        }
+    }
+
+    pub async fn known_devices(&self) -> Vec<DeviceInfo> {
+        let inner = self.inner.lock().await;
+        inner.known_devices.keys().map(|id| {
+            let name = inner.device_names.get(id).cloned().unwrap_or_else(|| id.clone());
+            DeviceInfo { id: id.clone(), name }
+        }).collect()
     }
 
     /// Broadcasts device measurement data to ALL SSE clients tagged with the source device ID.

@@ -1314,9 +1314,9 @@ dependencies = [
 
 [[package]]
 name = "kiwi-measurements"
-version = "0.1.3"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a6b0f9a92bda1862ccd0cd02e6c69ac780449209487bad774a7afe82c4ce2fd"
+checksum = "99417f919e8185eda9c81d419ed886dd58d422af61e2d6b360785b42912a1b01"
 dependencies = [
  "crc16",
  "heapless",
@@ -2251,6 +2251,7 @@ version = "0.0.1"
 dependencies = [
  "clap",
  "ctrlc",
+ "heapless",
  "kiwi-measurements",
  "rand 0.10.1",
 ]

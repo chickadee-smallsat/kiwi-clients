@@ -7,8 +7,9 @@
 // Message protocol sent to ports:
 //   { type: 'open' }
 //   { type: 'error' }
-//   { type: 'devices', devices: string[] }
+//   { type: 'devices', devices: {id: string, name: string}[] }
 //   { type: 'data', device: string, payload: object[] }
+//   { type: 'rename', device: string, name: string }
 
 const ports = new Set();
 let es = null;
@@ -35,6 +36,18 @@ function connectSSE() {
         try {
             lastDevices = JSON.parse(e.data);
             broadcast({ type: 'devices', devices: lastDevices });
+        } catch (_) {}
+    });
+
+    es.addEventListener('rename', (e) => {
+        try {
+            const msg = JSON.parse(e.data);
+            // Keep lastDevices in sync so new ports get the updated name.
+            if (lastDevices && Array.isArray(lastDevices)) {
+                const entry = lastDevices.find((d) => d.id === msg.device);
+                if (entry) entry.name = msg.name;
+            }
+            broadcast({ type: 'rename', device: msg.device, name: msg.name });
         } catch (_) {}
     });
 

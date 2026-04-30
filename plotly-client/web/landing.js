@@ -15,6 +15,8 @@
 
   const devices = new Set();
   const tabs = new Map();
+  // Friendly name from the Id measurement packet, keyed by device address.
+  const deviceNames = new Map();
   // Per-device stats updated from SharedWorker data messages.
   // { device: { bytes: number, packets: number, lastWindowMs: number, dataRate: string, packetRate: string } }
   const deviceStats = new Map();
@@ -73,7 +75,7 @@
     const q = currentFilter();
     const all = Array.from(devices).sort((a, b) => Number(a) - Number(b));
     if (!q) return all;
-    return all.filter((p) => String(p).includes(q));
+    return all.filter((p) => String(p).includes(q) || (deviceNames.get(p) || '').toLowerCase().includes(q.toLowerCase()));
   }
 
   function activateTab(key) {
@@ -191,7 +193,7 @@
 
       const tdName = document.createElement('td');
       tdName.className = 'devName';
-      tdName.textContent = port;
+      tdName.textContent = deviceNames.get(port) || port;
       tr.appendChild(tdName);
 
       const tdData = document.createElement('td');
@@ -284,10 +286,35 @@
     render();
   }
 
-  function setPorts(ports) {
+  function setPorts(portEntries) {
     devices.clear();
-    for (const p of ports) devices.add(String(p));
+    for (const entry of portEntries) {
+      const id = typeof entry === 'string' ? entry : entry.id;
+      const name = typeof entry === 'string' ? entry : entry.name;
+      devices.add(String(id));
+      if (name && name !== id) deviceNames.set(String(id), name);
+    }
     render();
+  }
+
+  function applyRename(deviceId, name) {
+    deviceNames.set(deviceId, name);
+    // Update the Name cell in an existing table row without full re-render.
+    const row = listEl?.querySelector(`tr[data-port="${CSS.escape(deviceId)}"]`);
+    if (row) {
+      const cell = row.querySelector('.devName');
+      if (cell) cell.textContent = name;
+    }
+    // Update open tab labels that belong to this device.
+    for (const [key, entry] of tabs.entries()) {
+      if (key === deviceId || key === `${deviceId}-3d`) {
+        const span = entry.tab.querySelector('span');
+        if (span) {
+          const suffix = key.endsWith('-3d') ? '3D ' : 'Device ';
+          span.textContent = `${suffix}${name}`;
+        }
+      }
+    }
   }
 function fetchDevicesOnce() {
   if (refreshBtn) {
@@ -366,6 +393,8 @@ function fetchDevicesOnce() {
       setConn('ok', 'connected');
     } else if (msg.type === 'data') {
       updateDeviceStats(msg.device, msg.payload);
+    } else if (msg.type === 'rename') {
+      applyRename(msg.device, msg.name);
     } else if (msg.type === 'error') {
       reconnects += 1;
       setConn('bad', `disconnected (retrying…) reconnects: ${reconnects}`);

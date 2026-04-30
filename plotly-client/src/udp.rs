@@ -1,5 +1,5 @@
 use atomic_time::AtomicInstant;
-use kiwi_measurements::{SINGLE_MEASUREMENT_SIZE, SingleMeasurement};
+use kiwi_measurements::{CommonMeasurement, SINGLE_MEASUREMENT_SIZE, SingleMeasurement};
 use std::{
     net::{SocketAddr, SocketAddrV4, ToSocketAddrs},
     sync::{
@@ -146,7 +146,12 @@ async fn udp_receive_data(
                             }) {
                                 let device_id = src.to_string();
                                 sink.register_device(&device_id).await;
-                                buf_by_device.entry(device_id).or_default().push(mes);
+                                // Id packets rename the device rather than being buffered as data.
+                                if let CommonMeasurement::Id(ref id_str) = mes.measurement {
+                                    sink.rename_device(&device_id, id_str.as_str()).await;
+                                } else {
+                                    buf_by_device.entry(device_id).or_default().push(mes);
+                                }
                             }
                         }
                         Err(_) => {

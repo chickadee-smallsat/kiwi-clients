@@ -1,5 +1,7 @@
+use rand::Rng;
 use std::{
     net::UdpSocket,
+    str::FromStr as _,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -7,7 +9,6 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use rand::Rng;
 
 use clap::Parser;
 use kiwi_measurements::{CommonMeasurement, SingleMeasurement};
@@ -45,6 +46,7 @@ fn main() {
 }
 
 fn udp_task(id: usize, address: &str, port: u16, running: Arc<AtomicBool>, drop_devices: bool) {
+    let dev_id = heapless::String::<12>::from_str(&format!("Kiwi#{:04}", (id + 1) % 1001)).unwrap();
     let end_time = if drop_devices {
         Some(Instant::now() + Duration::from_secs(rand::rng().next_u64() % 60 + 30))
     } else {
@@ -70,12 +72,23 @@ fn udp_task(id: usize, address: &str, port: u16, running: Arc<AtomicBool>, drop_
         lcount += 1;
         let now = Instant::now();
         if let Some(end_time) = end_time
-            && now >= end_time {
-                println!("Device {} simulating disconnect", id + 1);
-                break;
-            }
+            && now >= end_time
+        {
+            println!("Device {} simulating disconnect", id + 1);
+            break;
+        }
         let elapsed = now.duration_since(start).as_secs_f64();
         if now.duration_since(last) > Duration::from_secs(2) {
+            let dev_id = SingleMeasurement {
+                timestamp: now.duration_since(start).as_micros() as u64,
+                measurement: CommonMeasurement::Id(dev_id.clone()),
+            };
+            if sock
+                .send_to(&core::convert::Into::<[u8; _]>::into(dev_id), &endpoint)
+                .is_ok()
+            {
+                sent += 1;
+            }
             println!(
                 "{}: Packet rate: {:.2} packets/sec, average loop: {:.2} ms, elapsed: {:.2} s",
                 sock.local_addr().unwrap().port(),
@@ -158,9 +171,13 @@ fn generate_baro_data(id: usize, elapsed: f64) -> CommonMeasurement {
     const ALT_PERIOD: f64 = 25.0; // seconds
     let id = id as f64;
 
-    let temp = (elapsed * 2.0 * core::f64::consts::PI / (TEMP_PERIOD + id * 1.0)).sin() * 2.0 + 25.0;
-    let pres = (elapsed * 2.0 * core::f64::consts::PI / (PRES_PERIOD + id * 1.0)).cos() * 20.0 + 1013.25;
-    let alt = ((elapsed * 2.0 * core::f64::consts::PI / (ALT_PERIOD + id * 1.0)).cos()).cosh() * 1000.0 + 100.0;
+    let temp =
+        (elapsed * 2.0 * core::f64::consts::PI / (TEMP_PERIOD + id * 1.0)).sin() * 2.0 + 25.0;
+    let pres =
+        (elapsed * 2.0 * core::f64::consts::PI / (PRES_PERIOD + id * 1.0)).cos() * 20.0 + 1013.25;
+    let alt = ((elapsed * 2.0 * core::f64::consts::PI / (ALT_PERIOD + id * 1.0)).cos()).cosh()
+        * 1000.0
+        + 100.0;
     CommonMeasurement::Baro(temp as f32, pres as f32, alt as f32)
 }
 
