@@ -139,16 +139,14 @@ app.on('before-quit', () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  app.quit();
 });
 
 app.whenReady().then(async () => {
   try {
     await createMainWindow();
   } catch (err) {
-    dialog.showErrorBox('Failed to start Kiwi Frontend', String(err));
+    dialog.showErrorBox('Failed to start Kiwi Plotter', String(err));
     app.quit();
   }
 });

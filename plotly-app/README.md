@@ -1,4 +1,4 @@
-# Kiwi Frontend Electron
+# Kiwi Plotter Electron
 
 This app wraps the Rust `plotly-client` web server in an Electron desktop shell.
 
