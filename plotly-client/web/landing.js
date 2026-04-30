@@ -15,6 +15,9 @@
 
   const devices = new Set();
   const tabs = new Map();
+  // Per-device stats updated from SharedWorker data messages.
+  // { device: { bytes: number, packets: number, lastWindowMs: number, dataRate: string, packetRate: string } }
+  const deviceStats = new Map();
   let reconnects = 0;
 
   const params = new URLSearchParams(window.location.search);
@@ -71,13 +74,6 @@
     const all = Array.from(devices).sort((a, b) => Number(a) - Number(b));
     if (!q) return all;
     return all.filter((p) => String(p).includes(q));
-  }
-
-  function makeBtn(label) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    return b;
   }
 
   function activateTab(key) {
@@ -163,32 +159,113 @@
     if (!listEl) return;
 
     const ports = filteredPorts();
-    listEl.innerHTML = '';
 
+    // Build a set of ports currently in the table so we can add/remove rows incrementally
+    // without resetting existing rows (which would clear stat cells mid-update).
+    const existing = new Set(Array.from(listEl.querySelectorAll('tr[data-port]')).map(r => r.dataset.port));
+
+    // Remove rows for devices that disappeared.
+    for (const port of existing) {
+      if (!ports.includes(port)) {
+        listEl.querySelector(`tr[data-port="${CSS.escape(port)}"]`)?.remove();
+        existing.delete(port);
+      }
+    }
+
+    // Add rows for new devices, preserving order.
     for (const port of ports) {
-      const row = document.createElement('div');
-      row.style.display = 'flex';
-      row.style.gap = '10px';
-      row.style.flexWrap = 'wrap';
+      if (existing.has(port)) continue;
 
-      const dashBtn = makeBtn(`Open device ${port}`);
-      dashBtn.setAttribute('aria-label', `Open dashboard for device ${port}`);
-      dashBtn.addEventListener('click', () => {
+      const tr = document.createElement('tr');
+      tr.dataset.port = port;
+
+      const tdName = document.createElement('td');
+      tdName.className = 'devName';
+      tdName.textContent = port;
+      tr.appendChild(tdName);
+
+      const tdData = document.createElement('td');
+      tdData.className = 'devStat';
+      tdData.dataset.stat = 'data';
+      tdData.textContent = '—';
+      tr.appendChild(tdData);
+
+      const tdPkt = document.createElement('td');
+      tdPkt.className = 'devStat';
+      tdPkt.dataset.stat = 'pkt';
+      tdPkt.textContent = '—';
+      tr.appendChild(tdPkt);
+
+      const tdPlot = document.createElement('td');
+      tdPlot.className = 'devActions';
+      const plotBtn = document.createElement('button');
+      plotBtn.className = 'devActBtn';
+      plotBtn.textContent = 'Plot';
+      plotBtn.setAttribute('aria-label', `Open dashboard for device ${port}`);
+      plotBtn.addEventListener('click', () => {
         const url = `/dashboard.html?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
         openDeviceTab(port, `Device ${port}`, url, `Device ${port} dashboard`);
       });
+      tdPlot.appendChild(plotBtn);
+      tr.appendChild(tdPlot);
 
-      const view3dBtn = makeBtn(`3D ${port}`);
-      view3dBtn.setAttribute('aria-label', `Open 3D view for device ${port}`);
-      view3dBtn.addEventListener('click', () => {
+      const td3d = document.createElement('td');
+      td3d.className = 'devActions';
+      const btn3d = document.createElement('button');
+      btn3d.className = 'devActBtn';
+      btn3d.textContent = '3D';
+      btn3d.setAttribute('aria-label', `Open 3D view for device ${port}`);
+      btn3d.addEventListener('click', () => {
         const key = `${port}-3d`;
         const url = `/3d/?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
         openDeviceTab(key, `3D ${port}`, url, `Device ${port} 3D view`);
       });
+      td3d.appendChild(btn3d);
+      tr.appendChild(td3d);
 
-      row.appendChild(dashBtn);
-      row.appendChild(view3dBtn);
-      listEl.appendChild(row);
+      listEl.appendChild(tr);
+    }
+  }
+
+  const STAT_WINDOW_MS = 2000;
+
+  function updateDeviceStats(device, payloadArray) {
+    if (!Array.isArray(payloadArray)) return;
+    // Estimate bytes as the JSON representation length (good enough for display).
+    const bytes = JSON.stringify(payloadArray).length;
+    const packets = payloadArray.length;
+    const now = performance.now();
+
+    let s = deviceStats.get(device);
+    if (!s) {
+      s = { bytes: 0, packets: 0, lastWindowMs: now, dataRate: '—', packetRate: '—' };
+      deviceStats.set(device, s);
+    }
+
+    s.bytes += bytes;
+    s.packets += packets;
+
+    const elapsed = now - s.lastWindowMs;
+    if (elapsed >= STAT_WINDOW_MS) {
+      const sec = elapsed / 1000;
+      const bps = s.bytes / sec;
+      const pps = s.packets / sec;
+
+      s.dataRate = bps >= 1024 ? `${(bps / 1024).toFixed(1)} KB/s` : `${bps.toFixed(0)} B/s`;
+      s.packetRate = `${pps.toFixed(1)} pkt/s`;
+
+      s.bytes = 0;
+      s.packets = 0;
+      s.lastWindowMs = now;
+
+      // Update the relevant table cells directly without re-rendering the whole table.
+      const row = listEl?.querySelector(`tr[data-port="${CSS.escape(device)}"]`);
+      if (row) {
+        const dataCell = row.querySelector('[data-stat="data"]');
+        const pktCell = row.querySelector('[data-stat="pkt"]');
+        if (dataCell) dataCell.textContent = s.dataRate;
+        if (pktCell) pktCell.textContent = s.packetRate;
+      }
     }
   }
 
@@ -277,6 +354,8 @@ function fetchDevicesOnce() {
     } else if (msg.type === 'devices' && Array.isArray(msg.devices)) {
       setPorts(msg.devices);
       setConn('ok', 'connected');
+    } else if (msg.type === 'data') {
+      updateDeviceStats(msg.device, msg.payload);
     } else if (msg.type === 'error') {
       reconnects += 1;
       setConn('bad', `disconnected (retrying…) reconnects: ${reconnects}`);

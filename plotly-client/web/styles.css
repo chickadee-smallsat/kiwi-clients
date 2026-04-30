@@ -521,6 +521,79 @@ body.light .miniDetails{
   color:var(--muted);
 }
 
+/* Device table on the landing page */
+.deviceTableWrap{
+  overflow-x:auto;
+  margin-top:10px;
+}
+
+.deviceTable{
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+}
+
+.deviceTable th,
+.deviceTable td{
+  padding:8px 12px;
+  text-align:left;
+  white-space:nowrap;
+  border-bottom:1px solid var(--border);
+}
+
+.deviceTable th{
+  color:var(--muted);
+  font-weight:600;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  border-bottom:1px solid var(--border2);
+}
+
+.deviceTable tbody tr:last-child td{
+  border-bottom:none;
+}
+
+.deviceTable tbody tr:hover td{
+  background:rgba(56,189,248,.06);
+}
+
+body.light .deviceTable tbody tr:hover td{
+  background:rgba(14,116,144,.06);
+}
+
+.deviceTable td.devName{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
+  color:var(--accent);
+}
+
+.deviceTable td.devStat{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
+  color:var(--muted);
+  min-width:90px;
+}
+
+.deviceTable td.devActions{
+  white-space:nowrap;
+}
+
+.devActBtn{
+  padding:4px 10px;
+  font-size:12px;
+  border-radius:6px;
+  border:1px solid var(--border2);
+  background:var(--ctrl-bg);
+  color:var(--text);
+  cursor:pointer;
+  transition:background .15s,border-color .15s;
+}
+
+.devActBtn:hover{
+  background:var(--ctrl-bg2);
+  border-color:var(--accent);
+  color:var(--accent);
+}
+
 #imu3dWrap{
   width:100%;
   height:100%;
