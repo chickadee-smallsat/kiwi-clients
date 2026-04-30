@@ -7,6 +7,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+use rand::Rng;
 
 use clap::Parser;
 use kiwi_measurements::{CommonMeasurement, SingleMeasurement};
@@ -30,7 +31,7 @@ fn main() {
             let running = running.clone();
             thread::spawn(move || {
                 println!("Starting UDP task for device {}", i + 1);
-                udp_task(i, &address, args.port, running);
+                udp_task(i, &address, args.port, running, args.drop);
             })
         })
         .collect::<Vec<_>>();
@@ -43,7 +44,12 @@ fn main() {
     }
 }
 
-fn udp_task(id: usize, address: &str, port: u16, running: Arc<AtomicBool>) {
+fn udp_task(id: usize, address: &str, port: u16, running: Arc<AtomicBool>, drop_devices: bool) {
+    let end_time = if drop_devices {
+        Some(Instant::now() + Duration::from_secs(rand::rng().next_u64() % 60 + 30))
+    } else {
+        None
+    };
     let start = Instant::now();
     let sock = UdpSocket::bind("127.0.0.1:0".to_string()).unwrap();
     if let Err(e) = sock.set_broadcast(true) {
@@ -63,6 +69,11 @@ fn udp_task(id: usize, address: &str, port: u16, running: Arc<AtomicBool>) {
     while running.load(Ordering::SeqCst) {
         lcount += 1;
         let now = Instant::now();
+        if let Some(end_time) = end_time
+            && now >= end_time {
+                println!("Device {} simulating disconnect", id + 1);
+                break;
+            }
         let elapsed = now.duration_since(start).as_secs_f64();
         if now.duration_since(last) > Duration::from_secs(2) {
             println!(
@@ -164,4 +175,7 @@ struct Args {
     /// Number of devices to simulate
     #[clap(short, long, default_value = "3")]
     devices: usize,
+    /// Drop devices randomly to simulate disconnects
+    #[clap(long, default_value_t = false)]
+    drop: bool,
 }

@@ -9,3 +9,4 @@ ctrlc = "3.5.0"
 kiwi-measurements = { workspace = true, default-features = false, features = [
     "serde",
 ] }
+rand = "0.10"

@@ -1,7 +1,7 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc, atomic::{AtomicU64, Ordering}},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use actix_web::rt::time::interval;
@@ -34,7 +34,8 @@ pub struct Broadcaster {
 struct BroadcasterInner {
     /// Internal u64 key is only used for stale-client eviction; never exposed to callers.
     clients: HashMap<u64, ClientEntry>,
-    known_devices: HashSet<String>,
+    /// Maps device ID → last time a UDP packet was received from that device.
+    known_devices: HashMap<String, Instant>,
 }
 
 impl Broadcaster {
@@ -45,6 +46,7 @@ impl Broadcaster {
             next_id: AtomicU64::new(0),
         });
         Broadcaster::spawn_ping(Arc::clone(&this));
+        Broadcaster::spawn_device_watchdog(Arc::clone(&this));
         this
     }
 
@@ -54,6 +56,34 @@ impl Broadcaster {
             loop {
                 interval.tick().await;
                 this.remove_stale_clients().await;
+            }
+        });
+    }
+
+    /// Evicts devices that have not sent a UDP packet in the last 10 seconds and broadcasts the
+    /// updated device list if anything changed.
+    fn spawn_device_watchdog(this: Arc<Self>) {
+        const DEVICE_TIMEOUT: Duration = Duration::from_secs(10);
+        actix_web::rt::spawn(async move {
+            let mut ticker = interval(Duration::from_secs(5));
+            loop {
+                ticker.tick().await;
+                let now = Instant::now();
+                let payload = {
+                    let mut inner = this.inner.lock().await;
+                    let before = inner.known_devices.len();
+                    inner.known_devices.retain(|_, last_seen| {
+                        now.duration_since(*last_seen) < DEVICE_TIMEOUT
+                    });
+                    if inner.known_devices.len() == before {
+                        continue; // nothing changed
+                    }
+                    let devs: Vec<&String> = inner.known_devices.keys().collect();
+                    serde_json::to_string(&devs).ok()
+                };
+                if let Some(payload) = payload {
+                    this.broadcast_device_list(&payload).await;
+                }
             }
         });
     }
@@ -83,15 +113,18 @@ impl Broadcaster {
         Sse::from_infallible_receiver(rx)
     }
 
-    /// Called the first time a UDP source address is seen.
-    /// Inserts the device into the known set and broadcasts the updated list to every SSE client.
+    /// Updates the last-seen timestamp for `device_id`.
+    /// If this is the first time the device has been seen, broadcasts the updated device list.
     pub async fn register_device(&self, device_id: &str) {
+        let now = Instant::now();
         let payload = {
             let mut inner = self.inner.lock().await;
-            if !inner.known_devices.insert(device_id.to_string()) {
-                return; // already known — no broadcast needed
+            let is_new = inner.known_devices.insert(device_id.to_string(), now).is_none();
+            if !is_new {
+                return; // timestamp refreshed; no broadcast needed
             }
-            serde_json::to_string(&inner.known_devices.iter().collect::<Vec<_>>()).ok()
+            let devs: Vec<&String> = inner.known_devices.keys().collect();
+            serde_json::to_string(&devs).ok()
         };
         if let Some(payload) = payload {
             self.broadcast_device_list(&payload).await;
@@ -99,7 +132,7 @@ impl Broadcaster {
     }
 
     pub async fn known_devices(&self) -> Vec<String> {
-        self.inner.lock().await.known_devices.iter().cloned().collect()
+        self.inner.lock().await.known_devices.keys().cloned().collect()
     }
 
     /// Broadcasts device measurement data to ALL SSE clients tagged with the source device ID.
