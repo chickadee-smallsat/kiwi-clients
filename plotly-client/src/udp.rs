@@ -121,7 +121,7 @@ async fn udp_receive_data(
                         continue;
                     }
                     let msg = serde_json::to_string(buf).expect("Failed to serialize measurements");
-                    sink.broadcast_device(device_id.clone(), &msg).await;
+                    sink.broadcast_data(device_id, &msg).await;
                     buf.clear();
                 }
                 buf_by_device.retain(|_, v| !v.is_empty());
@@ -145,7 +145,7 @@ async fn udp_receive_data(
                                 log::warn!("[{kind}] Received invalid measurement: {e:?}");
                             }) {
                                 let device_id = src.to_string();
-                                sink.register_port(device_id.clone()).await;
+                                sink.register_device(&device_id).await;
                                 buf_by_device.entry(device_id).or_default().push(mes);
                             }
                         }

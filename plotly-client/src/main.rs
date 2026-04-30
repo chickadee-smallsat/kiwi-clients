@@ -16,7 +16,7 @@ async fn main() -> io::Result<()> {
     let bindaddr =
         udp::cleaner_sockaddr((args.udp_addr, args.udp_port)).expect("Invalid UDP bind address");
 
-    let data = Broadcaster::create();
+    let data = Broadcaster::create(3);
 
     log::info!(
         "starting HTTP server at http://localhost:{}",
@@ -41,9 +41,7 @@ async fn main() -> io::Result<()> {
         let app = App::new()
             .app_data(web::Data::from(Arc::clone(&data)))
             .service(event_stream)
-            .service(devices_stream)
-            .service(devices_list)
-            .service(device_stream);
+            .service(devices_list);
 
         #[cfg(debug_assertions)]
         let app = app.service(
@@ -65,40 +63,12 @@ async fn main() -> io::Result<()> {
 
 #[get("/events")]
 async fn event_stream(broadcaster: web::Data<Broadcaster>) -> impl Responder {
-    #[cfg(debug_assertions)]
-    log::info!("SSE client connected");
-    #[cfg(not(debug_assertions))]
-    log::debug!("SSE client connected");
     broadcaster.new_client().await
-}
-
-#[get("/devices/events")]
-async fn devices_stream(broadcaster: web::Data<Broadcaster>) -> impl Responder {
-    #[cfg(debug_assertions)]
-    log::info!("Device list SSE client connected");
-    #[cfg(not(debug_assertions))]
-    log::debug!("Device list SSE client connected");
-    broadcaster.new_device_list_client().await
 }
 
 #[get("/devices")]
 async fn devices_list(broadcaster: web::Data<Broadcaster>) -> impl Responder {
-    web::Json(broadcaster.known_ports())
-}
-
-#[get("/devices/{device_id}/events")]
-async fn device_stream(
-    broadcaster: web::Data<Broadcaster>,
-    device_id: web::Path<String>,
-) -> impl Responder {
-    let device_id = device_id.into_inner();
-
-    #[cfg(debug_assertions)]
-    log::info!("Device SSE client connected for device {}", device_id);
-    #[cfg(not(debug_assertions))]
-    log::debug!("Device SSE client connected for device {}", device_id);
-
-    broadcaster.new_device_client(device_id).await
+    web::Json(broadcaster.known_devices().await)
 }
 
 use clap::Parser;
