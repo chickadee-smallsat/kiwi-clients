@@ -24,10 +24,26 @@ fn main() {
     })
     .expect("Error setting Ctrl-C handler");
 
-    udp_task(&args.address, args.port, running);
+    let join_handles = (0..args.devices)
+        .map(|i| {
+            let address = args.address.clone();
+            let running = running.clone();
+            thread::spawn(move || {
+                println!("Starting UDP task for device {}", i + 1);
+                udp_task(i, &address, args.port, running);
+            })
+        })
+        .collect::<Vec<_>>();
+    while running.load(Ordering::SeqCst) {
+        thread::sleep(Duration::from_secs(1));
+    }
+    println!("Waiting for UDP tasks to exit...");
+    for handle in join_handles {
+        let _ = handle.join();
+    }
 }
 
-fn udp_task(address: &str, port: u16, running: Arc<AtomicBool>) {
+fn udp_task(id: usize, address: &str, port: u16, running: Arc<AtomicBool>) {
     let start = Instant::now();
     let sock = UdpSocket::bind("127.0.0.1:0".to_string()).unwrap();
     if let Err(e) = sock.set_broadcast(true) {
@@ -35,7 +51,10 @@ fn udp_task(address: &str, port: u16, running: Arc<AtomicBool>) {
         running.store(false, Ordering::SeqCst);
         return;
     }
-    println!("UDP socket bound on port {port}");
+    println!(
+        "UDP socket bound on port {}",
+        sock.local_addr().unwrap().port()
+    );
     let endpoint = format!("{address}:{port}");
     let mut last = Instant::now();
     let mut sent = 0;
@@ -45,9 +64,10 @@ fn udp_task(address: &str, port: u16, running: Arc<AtomicBool>) {
         lcount += 1;
         let now = Instant::now();
         let elapsed = now.duration_since(start).as_secs_f64();
-        if now.duration_since(last) > Duration::from_secs(1) {
+        if now.duration_since(last) > Duration::from_secs(2) {
             println!(
-                "Packet rate: {:.2} packets/sec, average loop: {:.2} ms, elapsed: {:.2} s",
+                "{}: Packet rate: {:.2} packets/sec, average loop: {:.2} ms, elapsed: {:.2} s",
+                sock.local_addr().unwrap().port(),
                 sent as f64 / now.duration_since(last).as_secs_f64(),
                 (total_loop.as_secs_f64() / lcount as f64) * 1000.0,
                 elapsed
@@ -57,10 +77,10 @@ fn udp_task(address: &str, port: u16, running: Arc<AtomicBool>) {
             lcount = 0;
             total_loop = Duration::ZERO;
         }
-        let accel = generate_accel_data(elapsed);
-        let gyro = generate_gyro_data(elapsed);
-        let mag = generate_mag_data(elapsed);
-        let baro = generate_baro_data(elapsed);
+        let accel = generate_accel_data(id, elapsed);
+        let gyro = generate_gyro_data(id, elapsed);
+        let mag = generate_mag_data(id, elapsed);
+        let baro = generate_baro_data(id, elapsed);
         let tstamp = now.duration_since(start).as_micros() as u64;
         for mes in [accel, gyro, mag, baro] {
             let mes = SingleMeasurement {
@@ -82,52 +102,54 @@ fn udp_task(address: &str, port: u16, running: Arc<AtomicBool>) {
     println!("UDP task exiting");
 }
 
-fn generate_accel_data(elapsed: f64) -> CommonMeasurement {
+fn generate_accel_data(id: usize, elapsed: f64) -> CommonMeasurement {
+    let id = id as f64;
     const THETA_PERIOD: f64 = 10.0; // seconds
     const PHI_PERIOD: f64 = 2.0; // seconds
     const G_PERIOD: f64 = 30.0; // seconds
 
-    let g = (elapsed * 2.0 * core::f64::consts::PI / G_PERIOD).sin() * 0.1 + 0.9;
-    let theta = elapsed * 2.0 * core::f64::consts::PI / THETA_PERIOD;
-    let phi = elapsed * 2.0 * core::f64::consts::PI / PHI_PERIOD;
+    let g = (elapsed * 2.0 * core::f64::consts::PI / (G_PERIOD + id * 2.0)).sin() * 0.1 + 0.9;
+    let theta = elapsed * 2.0 * core::f64::consts::PI / (THETA_PERIOD + id * 3.0);
+    let phi = elapsed * 2.0 * core::f64::consts::PI / (PHI_PERIOD + id * 4.0);
     let z = (theta).cos() * g;
     let x = (theta).sin() * (phi).cos() * g;
     let y = (theta).sin() * (phi).sin() * g;
     CommonMeasurement::Accel(x as f32, y as f32, z as f32)
 }
 
-fn generate_gyro_data(elapsed: f64) -> CommonMeasurement {
+fn generate_gyro_data(id: usize, elapsed: f64) -> CommonMeasurement {
     const OMEGA: f64 = 2.0 * core::f64::consts::PI / 5.0; // radians per second
     const RATE: f64 = 0.25; // degrees per second
 
-    let x = (RATE * (elapsed * OMEGA).cos()) as f32;
-    let y = (RATE * (elapsed * OMEGA).sin()) as f32;
+    let x = (RATE * (elapsed * (OMEGA + id as f64 * 0.1)).cos()) as f32;
+    let y = (RATE * (elapsed * (OMEGA + id as f64 * 0.1)).sin()) as f32;
     let z = 0.0;
     CommonMeasurement::Gyro(x, y, z)
 }
 
-fn generate_mag_data(elapsed: f64) -> CommonMeasurement {
+fn generate_mag_data(id: usize, elapsed: f64) -> CommonMeasurement {
     const THETA_PERIOD: f64 = 10.0; // seconds
     const PHI_PERIOD: f64 = 3.0; // seconds
     const G_PERIOD: f64 = 30.0; // seconds
-
-    let g = (elapsed * 2.0 * core::f64::consts::PI / G_PERIOD).sin() * 10.0 + 600.0;
-    let theta = elapsed * 2.0 * core::f64::consts::PI / THETA_PERIOD;
-    let phi = elapsed * 2.0 * core::f64::consts::PI / PHI_PERIOD;
+    let id = id as f64;
+    let g = (elapsed * 2.0 * core::f64::consts::PI / (G_PERIOD + id * 2.0)).sin() * 10.0 + 600.0;
+    let theta = elapsed * 2.0 * core::f64::consts::PI / (THETA_PERIOD + id * 3.0);
+    let phi = elapsed * 2.0 * core::f64::consts::PI / (PHI_PERIOD + id * 4.0);
     let z = (theta).cos() * g;
     let x = (theta).sin() * (phi).cos() * g;
     let y = (theta).sin() * (phi).sin() * g;
     CommonMeasurement::Mag(x as f32, y as f32, z as f32)
 }
 
-fn generate_baro_data(elapsed: f64) -> CommonMeasurement {
+fn generate_baro_data(id: usize, elapsed: f64) -> CommonMeasurement {
     const TEMP_PERIOD: f64 = 15.0; // seconds
     const PRES_PERIOD: f64 = 20.0; // seconds
     const ALT_PERIOD: f64 = 25.0; // seconds
+    let id = id as f64;
 
-    let temp = (elapsed * 2.0 * core::f64::consts::PI / TEMP_PERIOD).sin() * 2.0 + 25.0;
-    let pres = (elapsed * 2.0 * core::f64::consts::PI / PRES_PERIOD).cos() * 20.0 + 1013.25;
-    let alt = ((elapsed * 2.0 * core::f64::consts::PI / ALT_PERIOD).cos()).cosh() * 1000.0 + 100.0;
+    let temp = (elapsed * 2.0 * core::f64::consts::PI / (TEMP_PERIOD + id * 1.0)).sin() * 2.0 + 25.0;
+    let pres = (elapsed * 2.0 * core::f64::consts::PI / (PRES_PERIOD + id * 1.0)).cos() * 20.0 + 1013.25;
+    let alt = ((elapsed * 2.0 * core::f64::consts::PI / (ALT_PERIOD + id * 1.0)).cos()).cosh() * 1000.0 + 100.0;
     CommonMeasurement::Baro(temp as f32, pres as f32, alt as f32)
 }
 
@@ -139,4 +161,7 @@ struct Args {
     /// Address to broadcast to
     #[clap(short, long, default_value = "127.0.0.1")]
     address: String,
+    /// Number of devices to simulate
+    #[clap(short, long, default_value = "3")]
+    devices: usize,
 }

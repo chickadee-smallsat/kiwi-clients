@@ -265,25 +265,23 @@ function fetchDevicesOnce() {
 
   setConn('warn', 'connecting…');
 
-  const es = new EventSource('/devices/events');
+  const sw = new SharedWorker('/sse.shared.worker.js');
+  const swPort = sw.port;
+  swPort.start();
 
-  es.onopen = () => {
-    setConn('ok', 'connected (waiting for devices…)');
-    fetchDevicesOnce();
-  };
-
-  es.onmessage = (e) => {
-    let parsed;
-    try {
-      parsed = JSON.parse(e.data);
-    } catch {
-      return;
+  swPort.onmessage = (ev) => {
+    const msg = ev.data;
+    if (msg.type === 'open') {
+      setConn('ok', 'connected (waiting for devices…)');
+      fetchDevicesOnce();
+    } else if (msg.type === 'devices' && Array.isArray(msg.devices)) {
+      setPorts(msg.devices);
+      setConn('ok', 'connected');
+    } else if (msg.type === 'error') {
+      reconnects += 1;
+      setConn('bad', `disconnected (retrying…) reconnects: ${reconnects}`);
     }
-    if (Array.isArray(parsed)) setPorts(parsed);
   };
 
-  es.onerror = () => {
-    reconnects += 1;
-    setConn('bad', `disconnected (retrying…) reconnects: ${reconnects}`);
-  };
+  window.addEventListener('pagehide', () => { swPort.postMessage('disconnect'); });
 })();
