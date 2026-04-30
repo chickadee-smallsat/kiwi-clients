@@ -44,15 +44,25 @@
             <summary>Devices</summary>
             <div class="menuBody">
               <div class="menuActions">
-                <input id="deviceSearch" type="search" placeholder="Search device port…" aria-label="Search devices" />
+                <input id="deviceSearch" type="search" placeholder="Search device…" aria-label="Search devices" />
                 <button id="refreshBtn" type="button">Refresh</button>
               </div>
 
-              <div class="deviceList" id="deviceList" role="list"></div>
+              <div class="deviceTableWrap">
+                <table class="deviceTable" id="deviceTable">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Data Rate</th>
+                      <th>Packet Rate</th>
+                      <th>Plot</th>
+                      <th>3D</th>
+                    </tr>
+                  </thead>
+                  <tbody id="deviceList"></tbody>
+                </table>
+              </div>
 
-              <p class="small" style="margin-top:12px;">
-                Click a device to open its live dashboard in this window.
-              </p>
             </div>
           </details>
         </section>

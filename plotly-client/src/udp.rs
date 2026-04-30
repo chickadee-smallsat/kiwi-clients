@@ -12,19 +12,6 @@ use tokio::{net::UdpSocket, time};
 
 use crate::broadcast::Broadcaster;
 
-// Unicast UDP listener
-///
-/// This function listens for UDP packets on a specified address and port.
-///
-/// # Arguments
-/// * `address` - The address to listen on.
-/// * `port` - The port to listen on.
-/// * `sink` - The broadcast channel to send received data to.
-/// * `running` - A flag to indicate if the listener should keep running.
-///
-/// # Returns
-/// This function does not return a value. It runs indefinitely until `running` is set to false.
-///
 pub async fn udp_listener_unicast(
     bind: SocketAddrV4,
     sink: Arc<Broadcaster>,
@@ -42,7 +29,6 @@ pub async fn udp_listener_unicast(
             }
         };
 
-        // Receive data
         if udp_receive_data("UDPU", &socket, &sink, running.clone(), &datarate)
             .await
             .is_err()
@@ -65,7 +51,7 @@ pub async fn udp_listener_multicast(
     let datarate = DataRateCounter::default();
 
     while running.load(Ordering::Relaxed) {
-        log::trace!("[UDPM] Listening for UDP packets from {address} on interface {interface}",);
+        log::trace!("[UDPM] Listening for UDP packets from {address} on interface {interface}");
         let socket = match UdpSocket::bind(bind).await {
             Ok(sock) => sock,
             Err(e) => {
@@ -104,7 +90,6 @@ pub async fn udp_listener_multicast(
             }
         };
 
-        // Receive data
         if udp_receive_data("UDPM", &socket, &sink, running.clone(), &datarate)
             .await
             .is_err()
@@ -124,22 +109,22 @@ async fn udp_receive_data(
 ) -> Result<(), ()> {
     use std::collections::HashMap;
 
-    let mut buf_by_port: HashMap<u16, Vec<SingleMeasurement>> = HashMap::new();
+    let mut buf_by_device: HashMap<String, Vec<SingleMeasurement>> = HashMap::new();
     let mut xmit = false;
 
     'receive: while running.load(Ordering::Relaxed) {
         let start = Instant::now();
         if xmit {
-            if !buf_by_port.is_empty() {
-                for (port, buf) in buf_by_port.iter_mut() {
+            if !buf_by_device.is_empty() {
+                for (device_id, buf) in buf_by_device.iter_mut() {
                     if buf.is_empty() {
                         continue;
                     }
                     let msg = serde_json::to_string(buf).expect("Failed to serialize measurements");
-                    sink.broadcast_device(*port, &msg).await;
+                    sink.broadcast_data(device_id, &msg).await;
                     buf.clear();
                 }
-                buf_by_port.retain(|_, v| !v.is_empty());
+                buf_by_device.retain(|_, v| !v.is_empty());
             } else {
                 log::trace!("[{kind}] No data received, continuing to listen");
                 Err(())?;
@@ -159,9 +144,9 @@ async fn udp_receive_data(
                             if let Ok(mes) = SingleMeasurement::try_from(&sbuf[..size]).inspect_err(|e| {
                                 log::warn!("[{kind}] Received invalid measurement: {e:?}");
                             }) {
-                                let src_port = src.port();
-                                sink.register_port(src_port).await;
-                                buf_by_port.entry(src_port).or_default().push(mes);
+                                let device_id = src.to_string();
+                                sink.register_device(&device_id).await;
+                                buf_by_device.entry(device_id).or_default().push(mes);
                             }
                         }
                         Err(_) => {

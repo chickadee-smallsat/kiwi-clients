@@ -5,12 +5,14 @@ import AHRS from "ahrs";
 
 const params = new URLSearchParams(location.search);
 const deviceKey = params.get("src") || "all";
-const devicePort = deviceKey === "all" ? null : Number(deviceKey);
 const demo = params.get("demo") === "1";
 const isEmbed = params.get("embed") === "1";
 
-const esUrl = devicePort ? `/devices/${devicePort}/events` : "/events";
-const es = new EventSource(esUrl);
+// Use the shared SSE worker so this iframe does not open its own connection.
+const sw = new SharedWorker('/sse.shared.worker.js');
+const swPort = sw.port;
+swPort.start();
+window.addEventListener('pagehide', () => { swPort.postMessage('disconnect'); });
 
 const scene = new THREE.Scene();
 
@@ -529,37 +531,36 @@ let lastRateMs = performance.now();
 let rateHz = 0;
 
 if (!demo) {
-  es.onopen = () => console.log("SSE connected:", esUrl);
-  es.onerror = () => console.log("SSE error / reconnecting...");
+  swPort.onmessage = (ev) => {
+    const msg = ev.data;
+    if (msg.type === 'open') {
+      if (hud) hud.textContent = "connected";
+    } else if (msg.type === 'error') {
+      if (hud) hud.textContent = "SSE error / reconnecting...";
+    } else if (msg.type === 'data') {
+      // Filter by device; deviceKey "all" receives data from every device.
+      if (deviceKey !== 'all' && msg.device !== deviceKey) return;
+      msgWin += 1;
 
-  es.onmessage = (e) => {
-    msgWin += 1;
+      const items = Array.isArray(msg.payload) ? msg.payload : [msg.payload];
+      for (const raw of items) {
+        const u0 = unpackSerde(raw);
+        if (!u0) continue;
+        const list = Array.isArray(u0) ? u0 : [u0];
 
-    let parsed;
-    try {
-      parsed = JSON.parse(e.data);
-    } catch {
-      return;
-    }
-    const items = Array.isArray(parsed) ? parsed : [parsed];
+        for (const u of list) {
+          const tsMs = tsToMs(u.ts);
 
-    for (const raw of items) {
-      const u0 = unpackSerde(raw);
-      if (!u0) continue;
-      const list = Array.isArray(u0) ? u0 : [u0];
+          if (u.sensor === "accel") lastAccel = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
+          if (u.sensor === "gyro") lastGyro = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
+          if (u.sensor === "mag") lastMag = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
 
-      for (const u of list) {
-        const tsMs = tsToMs(u.ts);
+          if (u.sensor === "temp" && Number.isFinite(u.value)) lastTemp = { ts_ms: tsMs, v: u.value };
+          if (u.sensor === "pressure" && Number.isFinite(u.value)) lastPressure = { ts_ms: tsMs, v: u.value };
+          if (u.sensor === "altitude" && Number.isFinite(u.value)) lastAltitude = { ts_ms: tsMs, v: u.value };
 
-        if (u.sensor === "accel") lastAccel = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
-        if (u.sensor === "gyro") lastGyro = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
-        if (u.sensor === "mag") lastMag = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
-
-        if (u.sensor === "temp" && Number.isFinite(u.value)) lastTemp = { ts_ms: tsMs, v: u.value };
-        if (u.sensor === "pressure" && Number.isFinite(u.value)) lastPressure = { ts_ms: tsMs, v: u.value };
-        if (u.sensor === "altitude" && Number.isFinite(u.value)) lastAltitude = { ts_ms: tsMs, v: u.value };
-
-        if (lastAccel && lastGyro) processFusionTo(Math.max(lastAccel.ts_ms, lastGyro.ts_ms));
+          if (lastAccel && lastGyro) processFusionTo(Math.max(lastAccel.ts_ms, lastGyro.ts_ms));
+        }
       }
     }
   };
