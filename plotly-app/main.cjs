@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, nativeTheme } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -119,17 +119,21 @@ function stopBackend() {
 async function createMainWindow() {
   const port = await startBackend();
 
+  const dark = nativeTheme.shouldUseDarkColors;
   const win = new BrowserWindow({
     width: 1280,
     height: 840,
     minWidth: 980,
     minHeight: 700,
     autoHideMenuBar: true,
+    show: false,
+    backgroundColor: dark ? '#081521' : '#eef5f8',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs')
     }
   });
 
+  win.once('ready-to-show', () => win.show());
   await win.loadURL(`http://${HTTP_HOST}:${port}`);
 }
 
