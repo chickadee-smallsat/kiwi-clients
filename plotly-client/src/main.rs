@@ -122,6 +122,8 @@ mod assets {
             "image/png"
         } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
             "image/jpeg"
+        } else if path.ends_with(".ico") {
+            "image/x-icon"
         } else if path.ends_with(".wasm") {
             "application/wasm"
         } else {

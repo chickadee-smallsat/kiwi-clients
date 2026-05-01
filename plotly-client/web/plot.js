@@ -571,9 +571,13 @@
     function buildPanelChrome(panel) {
         if (panel.querySelector('.panelChrome')) return;
 
+        const controls = document.createElement('div');
+        controls.className = 'panelControls';
+
         const chrome = document.createElement('div');
         chrome.className = 'panelChrome';
         chrome.textContent = '⋮⋮';
+        controls.appendChild(chrome);
 
         const content = document.createElement('div');
         content.className = 'panelContent';
@@ -582,7 +586,7 @@
             content.appendChild(panel.firstChild);
         }
 
-        panel.appendChild(chrome);
+        panel.appendChild(controls);
         panel.appendChild(content);
 
         const resizeE = document.createElement('div');
@@ -954,6 +958,72 @@
     if (tempDiv) initScalarPlot(tempDiv, '°C');
     if (pressureDiv) initScalarPlot(pressureDiv, 'hPa');
     if (altitudeDiv) initScalarPlot(altitudeDiv, 'm');
+
+    // Y-axis range dialog setup
+    const yRangeDialog = document.getElementById('yRangeDialog');
+    const yRangeMin = document.getElementById('yRangeMin');
+    const yRangeMax = document.getElementById('yRangeMax');
+    const yRangeApply = document.getElementById('yRangeApply');
+    const yRangeAuto = document.getElementById('yRangeAuto');
+    const yRangeCancel = document.getElementById('yRangeCancel');
+
+    // Maps plotDiv → { min, max } or null (autorange)
+    const yRanges = new Map();
+    let yRangeTarget = null; // the plotDiv currently being edited
+
+    function openYRangeDialog(plotDiv) {
+        yRangeTarget = plotDiv;
+        const saved = yRanges.get(plotDiv);
+        yRangeMin.value = saved ? saved.min : '';
+        yRangeMax.value = saved ? saved.max : '';
+        yRangeDialog.showModal();
+    }
+
+    function applyYRange(plotDiv, min, max) {
+        yRanges.set(plotDiv, { min, max });
+        Plotly.relayout(plotDiv, { 'yaxis.autorange': false, 'yaxis.range': [min, max] });
+        updateYRangeBtn(plotDiv);
+    }
+
+    function resetYRange(plotDiv) {
+        yRanges.delete(plotDiv);
+        Plotly.relayout(plotDiv, { 'yaxis.autorange': true });
+        updateYRangeBtn(plotDiv);
+    }
+
+    function updateYRangeBtn(plotDiv) {
+        const panel = plotDiv.closest('.dashboardPanel');
+        if (!panel) return;
+        const btn = panel.querySelector('.yRangeBtn');
+        if (!btn) return;
+        const isFixed = yRanges.has(plotDiv);
+        btn.classList.toggle('active', isFixed);
+        btn.title = isFixed ? `Y: [${yRanges.get(plotDiv).min}, ${yRanges.get(plotDiv).max}]` : 'Set Y-axis range';
+    }
+
+    if (yRangeApply) {
+        yRangeApply.addEventListener('click', () => {
+            const min = parseFloat(yRangeMin.value);
+            const max = parseFloat(yRangeMax.value);
+            if (yRangeTarget && !isNaN(min) && !isNaN(max) && max > min) {
+                applyYRange(yRangeTarget, min, max);
+                yRangeDialog.close();
+            }
+        });
+    }
+
+    if (yRangeAuto) {
+        yRangeAuto.addEventListener('click', () => {
+            if (yRangeTarget) resetYRange(yRangeTarget);
+            yRangeDialog.close();
+        });
+    }
+
+    if (yRangeCancel) {
+        yRangeCancel.addEventListener('click', () => {
+            yRangeDialog.close();
+        });
+    }
 
     if (boardNameEl && board) {
         boardNameEl.textContent = board;
@@ -1344,6 +1414,29 @@
     // the dashboard's own SSE connection and prevents data from flowing.
     if (document.getElementById('panel3dDetails')?.open) sync3DFrame();
     initPanelLayout();
+
+    // Add a Y-range button to each plot panel — must run after initPanelLayout()
+    // creates .panelControls, otherwise closest('.dashboardPanel') exists but
+    // panel.querySelector('.panelControls') returns null.
+    for (const div of [accelDiv, gyroDiv, magDiv, tempDiv, pressureDiv, altitudeDiv]) {
+        if (!div) continue;
+        const panel = div.closest('.dashboardPanel');
+        if (!panel) continue;
+        const controls = panel.querySelector('.panelControls');
+        if (!controls) continue;
+        if (controls.querySelector('.yRangeBtn')) continue; // guard against double-init
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'yRangeBtn';
+        btn.textContent = 'Y range';
+        btn.title = 'Set Y-axis range';
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openYRangeDialog(div);
+        });
+        controls.insertBefore(btn, controls.firstChild);
+    }
 
     windowInput?.addEventListener('change', () => {
         applySettings();

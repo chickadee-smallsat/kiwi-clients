@@ -468,6 +468,76 @@ body.light .plotDetails{
   flex:0 0 auto;
 }
 
+.yRangeBtn{
+  flex:0 0 auto;
+  font-size:11px;
+  padding:2px 8px;
+  border-radius:6px;
+  cursor:pointer;
+  background:var(--ctrl-bg);
+  color:var(--muted);
+  border:1px solid var(--border);
+  line-height:1.4;
+  opacity:0.5;
+  transition:opacity .15s;
+}
+.yRangeBtn:hover{
+  background:var(--ctrl-bg2);
+  color:var(--text);
+  opacity:1;
+}
+.panelControls:hover .yRangeBtn{
+  opacity:1;
+}
+.yRangeBtn.active{
+  border-color:var(--accent);
+  color:var(--accent);
+}
+
+.yRangeDialog{
+  background:var(--card);
+  color:var(--text);
+  border:1px solid var(--border2);
+  border-radius:14px;
+  padding:20px 24px;
+  min-width:240px;
+  box-shadow:var(--shadow);
+}
+.yRangeDialog::backdrop{
+  background:rgba(0,0,0,0.55);
+}
+.yRangeTitle{
+  margin:0 0 14px;
+  font-size:15px;
+}
+.yRangeFields{
+  display:flex;
+  gap:12px;
+  margin-bottom:14px;
+}
+.yRangeFields label{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  font-size:12px;
+  color:var(--muted);
+  flex:1;
+}
+.yRangeFields input{
+  background:var(--ctrl-bg);
+  border:1px solid var(--border2);
+  border-radius:6px;
+  color:var(--text);
+  padding:5px 8px;
+  font-size:13px;
+  width:100%;
+}
+.yRangeBtns{
+  display:flex;
+  gap:8px;
+  justify-content:flex-end;
+}
+
 .plotDetails > summary::-webkit-details-marker{
   display:none;
 }
@@ -760,11 +830,17 @@ body.light .tab.active{
   background:var(--ctrl-bg);
 }
 
-.panelChrome{
+.panelControls{
   position:absolute;
   top:6px;
   right:8px;
   z-index:10;
+  display:flex;
+  align-items:center;
+  gap:4px;
+}
+
+.panelChrome{
   padding:3px 6px;
   border:1px solid var(--border);
   border-radius:7px;
@@ -781,7 +857,7 @@ body.light .tab.active{
   transition:opacity .15s;
 }
 
-.panelChrome:hover{
+.panelControls:hover .panelChrome{
   opacity:1;
 }
 

@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kiwi Sensor Dashboard</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
   <script src="./plotly-2.27.0.min.js"></script>
   <link rel="stylesheet" href="/styles.css" />
 </head>
@@ -195,6 +196,22 @@
     </section>
   </main>
 
+  <dialog id="yRangeDialog" class="yRangeDialog">
+    <form method="dialog">
+      <h3 class="yRangeTitle">Y-Axis Range</h3>
+      <div class="yRangeFields">
+        <label>Min<input id="yRangeMin" type="number" step="any" placeholder="auto" /></label>
+        <label>Max<input id="yRangeMax" type="number" step="any" placeholder="auto" /></label>
+      </div>
+      <div class="yRangeBtns">
+        <button type="button" id="yRangeApply">Apply</button>
+        <button type="button" id="yRangeAuto">Autorange</button>
+        <button type="button" id="yRangeCancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="/plot.js"></script>
+
 </body>
 </html>
