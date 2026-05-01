@@ -14,7 +14,8 @@
   const devicesTab = document.querySelector('.tab[data-tab="devices"]');
   const disconnectedTab = document.getElementById('disconnectedTab');
   const disconnectedView = document.getElementById('disconnectedView');
-  const disconnectedListEl = document.getElementById('disconnectedList');
+  const disconnectedSessionsEl = document.getElementById('disconnectedSessions');
+  const newSessionBtn = document.getElementById('newSessionBtn');
 
   const devices = new Set();
   const tabs = new Map();
@@ -25,8 +26,11 @@
   const deviceStats = new Map();
   // Tracks when each device was first seen (ms since epoch).
   const connectionTimes = new Map();
-  // Log of disconnected devices: { id, name, connectedAt, disconnectedAt }
+  // Log of disconnected devices in the current session: { id, name, connectedAt, disconnectedAt }
   const disconnectedDevices = [];
+  // Archived sessions: each entry is { label: string, entries: [...] }
+  const archivedSessions = [];
+  let sessionCounter = 1;
   let reconnects = 0;
 
   const params = new URLSearchParams(window.location.search);
@@ -372,20 +376,63 @@
   }
 
   function renderDisconnected() {
-    if (!disconnectedListEl) return;
-    disconnectedListEl.innerHTML = '';
-    for (const d of disconnectedDevices) {
-      const tr = document.createElement('tr');
-      const mkTd = (text, cls) => { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; return td; };
-      tr.appendChild(mkTd(d.name, 'mono'));
-      tr.appendChild(mkTd(d.id, 'mono'));
-      tr.appendChild(mkTd(formatTime(d.connectedAt)));
-      tr.appendChild(mkTd(formatTime(d.disconnectedAt)));
-      tr.appendChild(mkTd(formatDuration(d.disconnectedAt - d.connectedAt)));
-      disconnectedListEl.appendChild(tr);
+    if (!disconnectedSessionsEl) return;
+    disconnectedSessionsEl.innerHTML = '';
+
+    const mkTd = (text, cls) => { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; return td; };
+
+    function buildTable(entries) {
+      const wrap = document.createElement('div');
+      wrap.className = 'deviceTableWrap';
+      const table = document.createElement('table');
+      table.className = 'deviceTable';
+      table.innerHTML = '<thead><tr><th>Name</th><th>Address</th><th>Connected</th><th>Disconnected</th><th>Duration</th></tr></thead>';
+      const tbody = document.createElement('tbody');
+      for (const d of entries) {
+        const tr = document.createElement('tr');
+        tr.appendChild(mkTd(d.name, 'mono'));
+        tr.appendChild(mkTd(d.id, 'mono'));
+        tr.appendChild(mkTd(formatTime(d.connectedAt)));
+        tr.appendChild(mkTd(formatTime(d.disconnectedAt)));
+        tr.appendChild(mkTd(formatDuration(d.disconnectedAt - d.connectedAt)));
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      return wrap;
     }
-    // Show/hide the tab.
-    if (disconnectedTab) disconnectedTab.style.display = disconnectedDevices.length ? '' : 'none';
+
+    // Current session at the top.
+    if (disconnectedDevices.length) {
+      const heading = document.createElement('p');
+      heading.style.cssText = 'font-weight:600;margin:12px 0 4px';
+      heading.textContent = `Session #${sessionCounter}`;
+      disconnectedSessionsEl.appendChild(heading);
+      disconnectedSessionsEl.appendChild(buildTable(disconnectedDevices));
+    }
+
+    // Render archived sessions newest-first.
+    for (let i = archivedSessions.length - 1; i >= 0; i--) {
+      const session = archivedSessions[i];
+      const heading = document.createElement('p');
+      heading.style.cssText = 'font-weight:600;margin:12px 0 4px;color:var(--muted)';
+      heading.textContent = session.label;
+      disconnectedSessionsEl.appendChild(heading);
+      disconnectedSessionsEl.appendChild(buildTable(session.entries));
+    }
+
+    // Show/hide the tab and the New Session button.
+    const hasAny = archivedSessions.length > 0 || disconnectedDevices.length > 0;
+    if (disconnectedTab) disconnectedTab.style.display = hasAny ? '' : 'none';
+    if (newSessionBtn) newSessionBtn.disabled = disconnectedDevices.length === 0;
+  }
+
+  function archiveSession() {
+    if (disconnectedDevices.length === 0) return;
+    archivedSessions.push({ label: `Session #${sessionCounter}`, entries: [...disconnectedDevices] });
+    sessionCounter += 1;
+    disconnectedDevices.length = 0;
+    renderDisconnected();
   }
 
 function fetchDevicesOnce() {
@@ -452,6 +499,13 @@ function fetchDevicesOnce() {
   if (disconnectedTab) {
     disconnectedTab.addEventListener('click', () => {
       activateTab('disconnected');
+    });
+  }
+
+  if (newSessionBtn) {
+    newSessionBtn.disabled = true;
+    newSessionBtn.addEventListener('click', () => {
+      archiveSession();
     });
   }
 

@@ -33,10 +33,14 @@ fn main() {
         .map(|i| {
             let address = args.address.clone();
             let running = running.clone();
-            thread::spawn(move || {
+            let hdl = thread::spawn(move || {
                 println!("Starting UDP task for device {}", i + 1);
                 udp_task(i, &address, args.port, running, args.drop);
-            })
+            });
+            if !args.no_delay {
+                thread::sleep(Duration::from_secs(1));
+            }
+            hdl
         })
         .collect::<Vec<_>>();
     while running.load(Ordering::SeqCst) && ACTIVE_TASKS.load(Ordering::SeqCst) > 0 {
@@ -200,4 +204,7 @@ struct Args {
     /// Drop devices randomly to simulate disconnects
     #[clap(long, default_value_t = false)]
     drop: bool,
+    /// Disable delayed-start
+    #[clap(long, default_value_t = false)]
+    no_delay: bool,
 }

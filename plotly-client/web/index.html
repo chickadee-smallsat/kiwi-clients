@@ -72,20 +72,11 @@
     <div id="disconnectedView" style="display:none">
       <main class="wrapSingle">
         <section class="card">
-          <div class="deviceTableWrap">
-            <table class="deviceTable" id="disconnectedTable">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Address</th>
-                  <th>Connected</th>
-                  <th>Disconnected</th>
-                  <th>Duration</th>
-                </tr>
-              </thead>
-              <tbody id="disconnectedList"></tbody>
-            </table>
+          <div class="row space" style="margin-bottom:10px">
+            <span style="font-weight:600;font-size:15px">Disconnected Devices</span>
+            <button id="newSessionBtn" type="button">New Session</button>
           </div>
+          <div id="disconnectedSessions"></div>
         </section>
       </main>
     </div>
