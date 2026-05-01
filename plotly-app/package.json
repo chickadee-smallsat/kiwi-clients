@@ -27,6 +27,7 @@
   "build": {
     "appId": "com.chickadee.kiwi-plotter",
     "productName": "Kiwi Plotter",
+    "icon": "assets/icon",
     "asar": true,
     "directories": {
       "output": "dist"
