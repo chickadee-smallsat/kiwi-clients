@@ -12,6 +12,9 @@
   const contentArea = document.getElementById('contentArea');
   const devicesView = document.getElementById('devicesView');
   const devicesTab = document.querySelector('.tab[data-tab="devices"]');
+  const disconnectedTab = document.getElementById('disconnectedTab');
+  const disconnectedView = document.getElementById('disconnectedView');
+  const disconnectedListEl = document.getElementById('disconnectedList');
 
   const devices = new Set();
   const tabs = new Map();
@@ -20,6 +23,10 @@
   // Per-device stats updated from SharedWorker data messages.
   // { device: { bytes: number, packets: number, lastWindowMs: number, dataRate: string, packetRate: string } }
   const deviceStats = new Map();
+  // Tracks when each device was first seen (ms since epoch).
+  const connectionTimes = new Map();
+  // Log of disconnected devices: { id, name, connectedAt, disconnectedAt }
+  const disconnectedDevices = [];
   let reconnects = 0;
 
   const params = new URLSearchParams(window.location.search);
@@ -82,9 +89,20 @@
     document.querySelectorAll('.tab').forEach((el) => el.classList.remove('active'));
     document.querySelectorAll('.tabContent').forEach((el) => el.classList.remove('active'));
 
+    if (key === 'disconnected') {
+      if (disconnectedTab) disconnectedTab.classList.add('active');
+      if (devicesView) devicesView.style.display = 'none';
+      if (disconnectedView) disconnectedView.style.display = '';
+      for (const { frame } of tabs.values()) {
+        try { frame.contentWindow?.postMessage({ type: 'kiwi-tab-active', active: false }, '*'); } catch (_) {}
+      }
+      return;
+    }
+
     if (key === 'devices') {
       if (devicesTab) devicesTab.classList.add('active');
       if (devicesView) devicesView.style.display = '';
+      if (disconnectedView) disconnectedView.style.display = 'none';
       // Deactivate all device tab iframes.
       for (const { frame } of tabs.values()) {
         try { frame.contentWindow?.postMessage({ type: 'kiwi-tab-active', active: false }, '*'); } catch (_) {}
@@ -93,6 +111,7 @@
     }
 
     if (devicesView) devicesView.style.display = 'none';
+    if (disconnectedView) disconnectedView.style.display = 'none';
 
     const entry = tabs.get(key);
     if (!entry) {
@@ -125,6 +144,12 @@
 
     if (tabs.has(tabKey)) {
       activateTab(tabKey);
+      // If a friendly name is now known, update the label in case the tab opened before the rename.
+      const existing = tabs.get(tabKey);
+      if (existing) {
+        const span = existing.tab.querySelector('span');
+        if (span && span.textContent !== labelText) span.textContent = labelText;
+      }
       return;
     }
 
@@ -190,6 +215,14 @@
 
       const tr = document.createElement('tr');
       tr.dataset.port = port;
+      tr.style.cursor = 'pointer';
+      tr.addEventListener('click', (e) => {
+        // Don't trigger row click when the 3D button is clicked.
+        if (e.target.closest('button')) return;
+        const displayName = deviceNames.get(port) || port;
+        const url = `/dashboard.html?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
+        openDeviceTab(port, displayName, url, `${displayName} dashboard`);
+      });
 
       const tdName = document.createElement('td');
       tdName.className = 'devName';
@@ -208,19 +241,6 @@
       tdPkt.textContent = '—';
       tr.appendChild(tdPkt);
 
-      const tdPlot = document.createElement('td');
-      tdPlot.className = 'devActions';
-      const plotBtn = document.createElement('button');
-      plotBtn.className = 'devActBtn';
-      plotBtn.textContent = 'Plot';
-      plotBtn.setAttribute('aria-label', `Open dashboard for device ${port}`);
-      plotBtn.addEventListener('click', () => {
-        const url = `/dashboard.html?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
-        openDeviceTab(port, `Device ${port}`, url, `Device ${port} dashboard`);
-      });
-      tdPlot.appendChild(plotBtn);
-      tr.appendChild(tdPlot);
-
       const td3d = document.createElement('td');
       td3d.className = 'devActions';
       const btn3d = document.createElement('button');
@@ -229,8 +249,9 @@
       btn3d.setAttribute('aria-label', `Open 3D view for device ${port}`);
       btn3d.addEventListener('click', () => {
         const key = `${port}-3d`;
+        const displayName = deviceNames.get(port) || port;
         const url = `/3d/?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
-        openDeviceTab(key, `3D ${port}`, url, `Device ${port} 3D view`);
+        openDeviceTab(key, `3D ${displayName}`, url, `${displayName} 3D view`);
       });
       td3d.appendChild(btn3d);
       tr.appendChild(td3d);
@@ -287,13 +308,22 @@
   }
 
   function setPorts(portEntries) {
-    devices.clear();
+    const incoming = new Set();
     for (const entry of portEntries) {
       const id = typeof entry === 'string' ? entry : entry.id;
       const name = typeof entry === 'string' ? entry : entry.name;
-      devices.add(String(id));
+      incoming.add(String(id));
       if (name && name !== id) deviceNames.set(String(id), name);
+      // Record connection time for new devices.
+      if (!connectionTimes.has(String(id))) connectionTimes.set(String(id), Date.now());
     }
+    // Detect departures before clearing.
+    const now = Date.now();
+    for (const id of devices) {
+      if (!incoming.has(id)) recordDisconnection(id, now);
+    }
+    devices.clear();
+    for (const id of incoming) devices.add(id);
     render();
   }
 
@@ -310,12 +340,54 @@
       if (key === deviceId || key === `${deviceId}-3d`) {
         const span = entry.tab.querySelector('span');
         if (span) {
-          const suffix = key.endsWith('-3d') ? '3D ' : 'Device ';
+          const suffix = key.endsWith('-3d') ? '3D ' : '';
           span.textContent = `${suffix}${name}`;
         }
       }
     }
   }
+  function formatTime(ms) {
+    return new Date(ms).toLocaleTimeString();
+  }
+
+  function formatDuration(ms) {
+    const totalSec = Math.floor(ms / 1000);
+    const days = Math.floor(totalSec / 86400);
+    const hh = Math.floor((totalSec % 86400) / 3600).toString().padStart(2, '0');
+    const mm = Math.floor((totalSec % 3600) / 60).toString().padStart(2, '0');
+    const ss = (totalSec % 60).toString().padStart(2, '0');
+    return days > 0 ? `${days} day${days > 1 ? 's' : ''} ${hh}:${mm}:${ss}` : `${hh}:${mm}:${ss}`;
+  }
+
+  function recordDisconnection(id, now) {
+    const connectedAt = connectionTimes.get(id) ?? now;
+    disconnectedDevices.unshift({
+      id,
+      name: deviceNames.get(id) || id,
+      connectedAt,
+      disconnectedAt: now,
+    });
+    connectionTimes.delete(id);
+    renderDisconnected();
+  }
+
+  function renderDisconnected() {
+    if (!disconnectedListEl) return;
+    disconnectedListEl.innerHTML = '';
+    for (const d of disconnectedDevices) {
+      const tr = document.createElement('tr');
+      const mkTd = (text, cls) => { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; return td; };
+      tr.appendChild(mkTd(d.name, 'mono'));
+      tr.appendChild(mkTd(d.id, 'mono'));
+      tr.appendChild(mkTd(formatTime(d.connectedAt)));
+      tr.appendChild(mkTd(formatTime(d.disconnectedAt)));
+      tr.appendChild(mkTd(formatDuration(d.disconnectedAt - d.connectedAt)));
+      disconnectedListEl.appendChild(tr);
+    }
+    // Show/hide the tab.
+    if (disconnectedTab) disconnectedTab.style.display = disconnectedDevices.length ? '' : 'none';
+  }
+
 function fetchDevicesOnce() {
   if (refreshBtn) {
     refreshBtn.disabled = true;
@@ -377,6 +449,12 @@ function fetchDevicesOnce() {
     });
   }
 
+  if (disconnectedTab) {
+    disconnectedTab.addEventListener('click', () => {
+      activateTab('disconnected');
+    });
+  }
+
   setConn('warn', 'connecting…');
 
   const sw = new SharedWorker('/sse.shared.worker.js');
@@ -391,10 +469,10 @@ function fetchDevicesOnce() {
     } else if (msg.type === 'devices' && Array.isArray(msg.devices)) {
       setPorts(msg.devices);
       setConn('ok', 'connected');
-    } else if (msg.type === 'data') {
-      updateDeviceStats(msg.device, msg.payload);
     } else if (msg.type === 'rename') {
       applyRename(msg.device, msg.name);
+    } else if (msg.type === 'data') {
+      updateDeviceStats(msg.device, msg.payload);
     } else if (msg.type === 'error') {
       reconnects += 1;
       setConn('bad', `disconnected (retrying…) reconnects: ${reconnects}`);

@@ -4,7 +4,7 @@ use std::{
     str::FromStr as _,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI32, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -12,6 +12,9 @@ use std::{
 
 use clap::Parser;
 use kiwi_measurements::{CommonMeasurement, SingleMeasurement};
+
+/// Number of active UDP tasks, allowing early exit when all tasks have finished simulating disconnects.
+static ACTIVE_TASKS: AtomicI32 = AtomicI32::new(0);
 
 fn main() {
     let args = Args::parse();
@@ -36,7 +39,7 @@ fn main() {
             })
         })
         .collect::<Vec<_>>();
-    while running.load(Ordering::SeqCst) {
+    while running.load(Ordering::SeqCst) && ACTIVE_TASKS.load(Ordering::SeqCst) > 0 {
         thread::sleep(Duration::from_secs(1));
     }
     println!("Waiting for UDP tasks to exit...");
@@ -46,6 +49,7 @@ fn main() {
 }
 
 fn udp_task(id: usize, address: &str, port: u16, running: Arc<AtomicBool>, drop_devices: bool) {
+    ACTIVE_TASKS.fetch_add(1, Ordering::SeqCst);
     let dev_id = heapless::String::<12>::from_str(&format!("Kiwi#{:04}", (id + 1) % 1001)).unwrap();
     let end_time = if drop_devices {
         Some(Instant::now() + Duration::from_secs(rand::rng().next_u64() % 60 + 30))
@@ -124,6 +128,7 @@ fn udp_task(id: usize, address: &str, port: u16, running: Arc<AtomicBool>, drop_
         thread::sleep(sleep_dur);
     }
     println!("UDP task exiting");
+    ACTIVE_TASKS.fetch_sub(1, Ordering::SeqCst);
 }
 
 fn generate_accel_data(id: usize, elapsed: f64) -> CommonMeasurement {

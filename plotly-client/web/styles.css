@@ -589,6 +589,10 @@ body.light .deviceTable tbody tr:hover td{
   color:var(--accent);
 }
 
+.mono{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
+}
+
 .deviceTable td.devStat{
   font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
   color:var(--muted);

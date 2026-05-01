@@ -9,6 +9,7 @@
 <body>
   <div id="tabBar" class="tabBar">
     <div class="tab active" data-tab="devices">Devices</div>
+    <div class="tab" id="disconnectedTab" data-tab="disconnected" style="display:none">Disconnected</div>
   </div>
 
   <div id="contentArea" class="contentArea">
@@ -24,9 +25,9 @@
             <div class="row">
               <span class="pill" id="connPill">
                 <span class="dot" id="connDot"></span>
-                <span id="connText">connecting…</span>
+                <span id="connText">Connecting…</span>
               </span>
-              <span class="pill">devices: <span id="deviceCount">0</span></span>
+              <span class="pill">Devices: <span id="deviceCount">0</span></span>
             </div>
 
             <div class="row">
@@ -55,7 +56,6 @@
                       <th>Name</th>
                       <th>Data Rate</th>
                       <th>Packet Rate</th>
-                      <th>Plot</th>
                       <th>3D</th>
                     </tr>
                   </thead>
@@ -65,6 +65,27 @@
 
             </div>
           </details>
+        </section>
+      </main>
+    </div>
+
+    <div id="disconnectedView" style="display:none">
+      <main class="wrapSingle">
+        <section class="card">
+          <div class="deviceTableWrap">
+            <table class="deviceTable" id="disconnectedTable">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Address</th>
+                  <th>Connected</th>
+                  <th>Disconnected</th>
+                  <th>Duration</th>
+                </tr>
+              </thead>
+              <tbody id="disconnectedList"></tbody>
+            </table>
+          </div>
         </section>
       </main>
     </div>
