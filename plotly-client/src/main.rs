@@ -83,7 +83,7 @@ async fn devices_stream(broadcaster: web::Data<Broadcaster>) -> impl Responder {
 
 #[get("/devices")]
 async fn devices_list(broadcaster: web::Data<Broadcaster>) -> impl Responder {
-    web::Json(broadcaster.known_ports())
+    web::Json(broadcaster.known_devices())
 }
 
 #[get("/devices/{device_id}/events")]
@@ -129,6 +129,7 @@ struct Args {
 #[cfg(not(debug_assertions))]
 mod assets {
     use actix_web::{HttpResponse, Result, route, web};
+
     use rust_embed::RustEmbed;
 
     #[derive(RustEmbed)]
@@ -159,6 +160,26 @@ mod assets {
         }
     }
 
+    /// Cache policy per asset type:
+    /// - HTML → no-cache (always revalidate; routing pages must stay fresh)
+    /// - Hashed bundles (index-*.js) → immutable, 1 year
+    /// - Versioned vendor files (plotly-x.y.z.min.js, xlsx.full.min.js) → 7 days
+    /// - App JS/CSS (plot.js, styles.css) → no-cache (no content hash in name)
+    fn cache_control_for(path: &str) -> &'static str {
+        if path.ends_with(".html") || path.is_empty() {
+            "no-cache, must-revalidate"
+        } else if path.contains("/assets/index-") && path.ends_with(".js") {
+            // Vite-hashed bundle — content never changes for this filename
+            "public, max-age=31536000, immutable"
+        } else if path.contains(".min.js") || path.ends_with(".glb") || path.ends_with(".wasm") {
+            // Versioned vendor files — safe to cache for a week
+            "public, max-age=604800"
+        } else {
+            // App source (plot.js, styles.css) — no content-hash, revalidate each time
+            "no-cache, must-revalidate"
+        }
+    }
+
     #[route("/{path:.*}", method = "GET", method = "HEAD")]
     async fn serve_assets(path: web::Path<String>) -> Result<HttpResponse> {
         let raw_path = path.into_inner();
@@ -176,6 +197,7 @@ mod assets {
         match Asset::get(&path) {
             Some(content) => Ok(HttpResponse::Ok()
                 .insert_header(("Content-Type", content_type_for(&path)))
+                .insert_header(("Cache-Control", cache_control_for(&path)))
                 .body(content.data.into_owned())),
             None => Ok(HttpResponse::NotFound().finish()),
         }

@@ -110,25 +110,36 @@ async fn udp_receive_data(
     use std::collections::HashMap;
 
     let mut buf_by_device: HashMap<String, Vec<SingleMeasurement>> = HashMap::new();
+    let mut packet_count_by_device: HashMap<String, usize> = HashMap::new();
+    let mut last_rate_update = Instant::now();
     let mut xmit = false;
 
     'receive: while running.load(Ordering::Relaxed) {
         let start = Instant::now();
-        if xmit {
-            if !buf_by_device.is_empty() {
-                for (device_id, buf) in buf_by_device.iter_mut() {
-                    if buf.is_empty() {
-                        continue;
-                    }
-                    let msg = serde_json::to_string(buf).expect("Failed to serialize measurements");
-                    sink.broadcast_device(device_id.clone(), &msg).await;
-                    buf.clear();
-                }
-                buf_by_device.retain(|_, v| !v.is_empty());
-            } else {
-                log::trace!("[{kind}] No data received, continuing to listen");
-                Err(())?;
+        if last_rate_update.elapsed() >= Duration::from_secs(1) {
+            let rates = std::mem::take(&mut packet_count_by_device);
+
+            for (device_id, rate) in rates {
+                sink.update_packet_rate(device_id, rate).await;
             }
+
+            last_rate_update = Instant::now();
+        }
+
+        if xmit {
+            // Broadcast whatever accumulated in this 100 ms window.
+            // An empty map is normal (no packets arrived) — do NOT treat it
+            // as a socket error; that caused a spurious rebind every 100 ms.
+            for (device_id, buf) in buf_by_device.iter_mut() {
+                if buf.is_empty() {
+                    continue;
+                }
+                let msg = serde_json::to_string(buf).expect("Failed to serialize measurements");
+                sink.broadcast_device(device_id.clone(), &msg).await;
+                buf.clear();
+            }
+            // Drop entries whose buffers are now empty so the map stays tidy.
+            buf_by_device.retain(|_, v| !v.is_empty());
             xmit = false;
         }
 
@@ -146,6 +157,7 @@ async fn udp_receive_data(
                             }) {
                                 let device_id = src.to_string();
                                 sink.register_port(device_id.clone()).await;
+                                *packet_count_by_device.entry(device_id.clone()).or_default() += 1;
                                 buf_by_device.entry(device_id).or_default().push(mes);
                             }
                         }
