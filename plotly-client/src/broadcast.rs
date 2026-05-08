@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use actix_web::rt::time::interval;
 use actix_web_lab::{
@@ -7,8 +11,11 @@ use actix_web_lab::{
 };
 use futures_util::future;
 use parking_lot::Mutex;
+use serde::Serialize;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
+
+const DEVICE_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub struct Broadcaster {
     inner: Mutex<BroadcasterInner>,
@@ -19,11 +26,17 @@ struct BroadcasterInner {
     clients: Vec<mpsc::Sender<sse::Event>>,
     device_clients: HashMap<String, Vec<mpsc::Sender<sse::Event>>>,
     device_list_clients: Vec<mpsc::Sender<sse::Event>>,
-    known_devices: HashMap<String, ()>,
+    known_devices: HashMap<String, Instant>,
+    packet_rates: HashMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DeviceInfo {
+    pub port: String,
+    pub rate: usize,
 }
 
 impl Broadcaster {
-    /// Constructs new broadcaster and spawns ping loop.
     pub fn create() -> Arc<Self> {
         let this = Arc::new(Broadcaster {
             inner: Mutex::new(BroadcasterInner::default()),
@@ -34,8 +47,6 @@ impl Broadcaster {
         this
     }
 
-    /// Pings clients every 10 seconds to see if they are alive and remove them from the broadcast
-    /// list if not.
     fn spawn_ping(this: Arc<Self>) {
         actix_web::rt::spawn(async move {
             let mut interval = interval(Duration::from_secs(10));
@@ -47,7 +58,6 @@ impl Broadcaster {
         });
     }
 
-    /// Removes all non-responsive clients from broadcast list.
     async fn remove_stale_clients(&self) {
         let (clients, device_clients, device_list_clients) = {
             let inner = self.inner.lock();
@@ -72,6 +82,7 @@ impl Broadcaster {
         let mut ok_device_clients: HashMap<String, Vec<mpsc::Sender<sse::Event>>> = HashMap::new();
         for (port, list) in device_clients {
             let mut ok_list = Vec::new();
+
             for client in list {
                 if client
                     .send(sse::Event::Comment("ping".into()))
@@ -81,6 +92,7 @@ impl Broadcaster {
                     ok_list.push(client.clone());
                 }
             }
+
             if !ok_list.is_empty() {
                 ok_device_clients.insert(port, ok_list);
             }
@@ -97,15 +109,54 @@ impl Broadcaster {
             }
         }
 
-        let mut inner = self.inner.lock();
-        inner.clients = ok_clients;
-        inner.device_clients = ok_device_clients;
-        inner.device_list_clients = ok_device_list_clients;
+        let (devices_changed, device_infos) = {
+            let mut inner = self.inner.lock();
+
+            let cutoff = Instant::now() - DEVICE_TIMEOUT;
+            let before = inner.known_devices.len();
+            inner
+                .known_devices
+                .retain(|_, last_seen| *last_seen >= cutoff);
+
+            let live_ports: HashSet<String> = inner.known_devices.keys().cloned().collect();
+            inner
+                .packet_rates
+                .retain(|port, _| live_ports.contains(port));
+
+            let devices_changed = before != inner.known_devices.len();
+            let device_infos = Self::build_device_infos(&inner);
+
+            inner.clients = ok_clients;
+            inner.device_clients = ok_device_clients;
+            inner.device_list_clients = ok_device_list_clients;
+
+            (devices_changed, device_infos)
+        };
+
+        if devices_changed {
+            if let Ok(payload) = serde_json::to_string(&device_infos) {
+                self.broadcast_device_list(&payload).await;
+            }
+        }
     }
 
-    /// Registers client with broadcaster, returning an SSE response body.
+    fn build_device_infos(inner: &BroadcasterInner) -> Vec<DeviceInfo> {
+        let cutoff = Instant::now() - DEVICE_TIMEOUT;
+        inner
+            .known_devices
+            .iter()
+            .filter(|(_, last_seen)| **last_seen >= cutoff)
+            .map(|(port, _)| DeviceInfo {
+                port: port.clone(),
+                rate: inner.packet_rates.get(port).copied().unwrap_or(0),
+            })
+            .collect()
+    }
+
     pub async fn new_client(&self) -> Sse<InfallibleStream<ReceiverStream<sse::Event>>> {
-        let (tx, rx) = mpsc::channel(10);
+        // 256-slot buffer: at ~10 SSE events/s a slow browser tab has 25 s
+        // of headroom before we drop it at the next 10-s stale-client ping.
+        let (tx, rx) = mpsc::channel(256);
         self.inner.lock().clients.push(tx);
         Sse::from_infallible_receiver(rx)
     }
@@ -114,42 +165,61 @@ impl Broadcaster {
         &self,
         port: String,
     ) -> Sse<InfallibleStream<ReceiverStream<sse::Event>>> {
-        let (tx, rx) = mpsc::channel(10);
+        let (tx, rx) = mpsc::channel(256);
         let mut inner = self.inner.lock();
         inner.device_clients.entry(port).or_default().push(tx);
         Sse::from_infallible_receiver(rx)
     }
 
     pub async fn new_device_list_client(&self) -> Sse<InfallibleStream<ReceiverStream<sse::Event>>> {
-        let (tx, rx) = mpsc::channel(10);
+        // Device-list events are infrequent; 64 slots is ample.
+        let (tx, rx) = mpsc::channel(64);
         self.inner.lock().device_list_clients.push(tx);
         Sse::from_infallible_receiver(rx)
     }
 
-    pub fn device_seen(&self, port: String) -> bool {
+    pub fn mark_device_seen(&self, port: String) -> bool {
         let mut inner = self.inner.lock();
-        if inner.known_devices.contains_key(&port) {
-            return false;
-        }
-        inner.known_devices.insert(port, ());
-        true
+        let is_new = !inner.known_devices.contains_key(&port);
+        inner.known_devices.insert(port, Instant::now());
+        is_new
     }
 
-    pub fn known_ports(&self) -> Vec<String> {
-        self.inner.lock().known_devices.keys().cloned().collect()
+    pub fn known_devices(&self) -> Vec<DeviceInfo> {
+        let cutoff = Instant::now() - DEVICE_TIMEOUT;
+
+        let mut inner = self.inner.lock();
+        inner
+            .known_devices
+            .retain(|_, last_seen| *last_seen >= cutoff);
+
+        Self::build_device_infos(&inner)
     }
 
-    pub async fn register_port(&self, port: String) {
-        if !self.device_seen(port) {
-            return;
-        }
-        let ports = self.known_ports();
-        if let Ok(payload) = serde_json::to_string(&ports) {
+    pub async fn update_packet_rate(&self, port: String, rate: usize) {
+        let device_infos = {
+            let mut inner = self.inner.lock();
+            inner.packet_rates.insert(port, rate);
+            Self::build_device_infos(&inner)
+        };
+
+        if let Ok(payload) = serde_json::to_string(&device_infos) {
             self.broadcast_device_list(&payload).await;
         }
     }
 
-    /// Broadcasts `msg` to all clients.
+    pub async fn register_port(&self, port: String) {
+        let is_new = self.mark_device_seen(port);
+
+        if is_new {
+            let device_infos = self.known_devices();
+
+            if let Ok(payload) = serde_json::to_string(&device_infos) {
+                self.broadcast_device_list(&payload).await;
+            }
+        }
+    }
+
     #[allow(dead_code)]
     pub async fn broadcast(&self, msg: &str) {
         let clients = self.inner.lock().clients.clone();
@@ -158,8 +228,6 @@ impl Broadcaster {
             .iter()
             .map(|client| client.send(sse::Data::new(msg).into()));
 
-        // try to send to all clients, ignoring failures
-        // disconnected clients will get swept up by `remove_stale_clients`
         let _ = future::join_all(send_futures).await;
     }
 

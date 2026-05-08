@@ -1,44 +1,48 @@
-:root{
-  --bg:#081521;
-  --surface:#102235;
-  --card:#122940;
-  --border:rgba(148,163,184,.18);
-  --border2:rgba(148,163,184,.30);
-  --text:#edf6ff;
-  --muted:rgba(226,236,248,.72);
+﻿:root{
+  --bg:#070b0f;
+  --surface:#0e1520;
+  --card:#131e2e;
+  --border:rgba(251,191,36,.12);
+  --border2:rgba(251,191,36,.22);
+  --text:#f5f0e8;
+  --muted:rgba(245,240,232,.55);
 
-  --accent:#38bdf8;
-  --accent2:#14b8a6;
+  --accent:#f59e0b;
+  --accent2:#10b981;
 
-  --ok:#38e6a7;
-  --warn:#ffd166;
-  --bad:#ff6b7d;
+  --ok:#10b981;
+  --warn:#f97316;
+  --bad:#ef4444;
 
-  --shadow:0 18px 46px rgba(0,0,0,.36);
+  --shadow:0 20px 50px rgba(0,0,0,.55);
 
-  --ctrl-bg:rgba(148,163,184,.10);
-  --ctrl-bg2:rgba(56,189,248,.18);
+  --ctrl-bg:rgba(251,191,36,.07);
+  --ctrl-bg2:rgba(245,158,11,.18);
   --ctrl-text:var(--text);
 
   --kiwi-right-w:420px;
 }
 
 body.light{
-  --bg:#eef5f8;
-  --surface:#f7fbfd;
+  --bg:#fdf8f0;
+  --surface:#fffdf7;
   --card:#ffffff;
-  --border:rgba(44,62,80,.13);
-  --border2:rgba(44,62,80,.22);
-  --text:#102033;
-  --muted:rgba(45,61,80,.68);
+  --border:rgba(120,80,10,.13);
+  --border2:rgba(120,80,10,.24);
+  --text:#1a1208;
+  --muted:rgba(26,18,8,.58);
 
-  --accent:#0ea5e9;
-  --accent2:#0f766e;
+  --accent:#d97706;
+  --accent2:#059669;
 
-  --shadow:0 18px 44px rgba(15,23,42,.10);
+  --ok:#059669;
+  --warn:#ea580c;
+  --bad:#dc2626;
 
-  --ctrl-bg:rgba(30,64,95,.06);
-  --ctrl-bg2:rgba(14,116,144,.12);
+  --shadow:0 18px 44px rgba(15,10,0,.12);
+
+  --ctrl-bg:rgba(120,80,10,.06);
+  --ctrl-bg2:rgba(217,119,6,.12);
   --ctrl-text:var(--text);
 }
 
@@ -49,18 +53,16 @@ body{
   margin:0;
   font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Arial,sans-serif;
   background:
-    radial-gradient(circle at 18% 8%, rgba(56,189,248,.14), transparent 34%),
-    radial-gradient(circle at 82% 4%, rgba(20,184,166,.13), transparent 32%),
-    radial-gradient(circle at 50% 100%, rgba(99,102,241,.08), transparent 38%),
+    radial-gradient(ellipse at 15% 0%, rgba(245,158,11,.09), transparent 45%),
+    radial-gradient(ellipse at 85% 100%, rgba(16,185,129,.07), transparent 45%),
     var(--bg);
   color:var(--text);
 }
 
 body.light{
   background:
-    radial-gradient(circle at 18% 8%, rgba(14,165,233,.14), transparent 36%),
-    radial-gradient(circle at 82% 4%, rgba(20,184,166,.12), transparent 34%),
-    radial-gradient(circle at 50% 100%, rgba(99,102,241,.07), transparent 40%),
+    radial-gradient(ellipse at 15% 0%, rgba(245,158,11,.10), transparent 45%),
+    radial-gradient(ellipse at 85% 100%, rgba(5,150,105,.07), transparent 45%),
     var(--bg);
 }
 
@@ -138,11 +140,11 @@ body.light #kiwi-splitter:hover::before{
 }
 
 .card{
-  background:rgba(18,41,64,0.86);
+  background:rgba(13,19,32,0.92);
   border:1px solid var(--border);
-  border-radius:16px;
+  border-radius:8px;
   box-shadow:var(--shadow);
-  backdrop-filter:saturate(135%) blur(8px);
+  backdrop-filter:saturate(140%) blur(10px);
 }
 
 body.light .card{
@@ -233,10 +235,10 @@ body.light .card{
   gap:8px;
   align-items:center;
   color:var(--muted);
-  background:rgba(16,34,53,.82);
+  background:rgba(9,13,20,.88);
   border:1px solid var(--border);
   padding:8px 10px;
-  border-radius:12px;
+  border-radius:6px;
 }
 
 body.light .menuSettingsGrid label{
@@ -286,7 +288,7 @@ body.light .menuSettingsGrid label{
 input[type="number"]{
   width:78px;
   padding:6px 8px;
-  border-radius:10px;
+  border-radius:5px;
   border:1px solid var(--border2);
   background:var(--ctrl-bg);
   color:var(--ctrl-text);
@@ -295,7 +297,7 @@ input[type="number"]{
 
 button{
   padding:9px 12px;
-  border-radius:12px;
+  border-radius:6px;
   border:1px solid var(--border2);
   background:var(--ctrl-bg);
   color:var(--text);
@@ -304,7 +306,7 @@ button{
 
 button:hover{
   background:var(--ctrl-bg2);
-  border-color:rgba(56,189,248,.46);
+  border-color:rgba(245,158,11,.55);
 }
 
 button:disabled{
@@ -319,7 +321,7 @@ select{
   -webkit-appearance:none;
   -moz-appearance:none;
   padding:7px 34px 7px 10px;
-  border-radius:10px;
+  border-radius:6px;
   border:1px solid var(--border2);
   background:var(--ctrl-bg);
   color:var(--ctrl-text);
@@ -327,7 +329,7 @@ select{
 }
 
 select:focus{
-  border-color:rgba(56,189,248,.56);
+  border-color:rgba(245,158,11,.65);
 }
 
 option{
@@ -347,9 +349,9 @@ details.menu > summary{
   cursor:pointer;
   user-select:none;
   padding:8px 10px;
-  border-radius:12px;
+  border-radius:6px;
   border:1px solid var(--border);
-  background:rgba(16,34,53,.86);
+  background:rgba(11,16,24,.92);
   color:var(--text);
 }
 
@@ -362,21 +364,21 @@ details.menu > summary::-webkit-details-marker{display:none}
 .menuBody{
   margin-top:10px;
   padding:10px;
-  border-radius:14px;
+  border-radius:8px;
   border:1px solid var(--border);
-  background:rgba(16,34,53,0.95);
-  backdrop-filter:saturate(135%) blur(8px);
+  background:rgba(9,13,20,0.97);
+  backdrop-filter:saturate(140%) blur(12px);
 }
 
 body.light .menuBody{
   background:rgba(247,251,253,0.96);
 }
 
-.topMenu .menuBody{
+.topMenu > .menuBody{
   position:absolute;
   top:52px;
   right:0;
-  width:320px;
+  width:360px;
   max-width:calc(100vw - 24px);
   max-height:calc(100vh - 120px);
   overflow:auto;
@@ -384,8 +386,14 @@ body.light .menuBody{
   box-shadow:0 18px 50px rgba(0,0,0,.45);
 }
 
-body.light .topMenu .menuBody{
+body.light .topMenu > .menuBody{
   box-shadow:0 18px 50px rgba(15,23,42,.16);
+}
+
+/* Block grid interactions while the menu is open */
+body.menuOpen #dashboardGrid{
+  pointer-events:none;
+  user-select:none;
 }
 
 .menuActions{
@@ -420,14 +428,14 @@ body.light .topMenu .menuBody{
 .plotDetails{
   margin-top:0;
   border:1px solid var(--border);
-  border-radius:14px;
-  background:rgba(16,34,53,0.84);
+  border-radius:8px;
+  background:rgba(11,16,24,0.90);
   overflow:hidden;
   display:flex;
   flex-direction:column;
   flex:1 1 auto;
   min-height:0;
-  backdrop-filter:saturate(135%) blur(6px);
+  backdrop-filter:saturate(140%) blur(8px);
 }
 
 body.light .plotDetails{
@@ -469,10 +477,10 @@ body.light .plotDetails{
 .miniDetails{
   margin-top:0;
   border:1px solid var(--border);
-  border-radius:14px;
-  background:rgba(16,34,53,0.84);
+  border-radius:8px;
+  background:rgba(11,16,24,0.90);
   overflow:hidden;
-  backdrop-filter:saturate(135%) blur(6px);
+  backdrop-filter:saturate(140%) blur(8px);
 }
 
 body.light .miniDetails{
@@ -525,7 +533,7 @@ body.light .miniDetails{
   width:100%;
   height:100%;
   min-height:260px;
-  border-radius:16px;
+  border-radius:8px;
   overflow:hidden;
   border:1px solid var(--border);
   background:var(--surface);
@@ -558,7 +566,7 @@ body.light .tabBar{
   align-items:center;
   gap:8px;
   padding:8px 12px;
-  border-radius:12px;
+  border-radius:6px;
   border:1px solid var(--border2);
   background:var(--ctrl-bg);
   color:var(--text);
@@ -567,13 +575,13 @@ body.light .tabBar{
 }
 
 .tab.active{
-  background:rgba(56,189,248,.19);
-  border-color:rgba(56,189,248,.38);
+  background:rgba(245,158,11,.18);
+  border-color:rgba(245,158,11,.50);
 }
 
 body.light .tab.active{
-  background:rgba(14,116,144,.13);
-  border-color:rgba(14,116,144,.26);
+  background:rgba(217,119,6,.13);
+  border-color:rgba(217,119,6,.38);
 }
 
 .tabClose{
@@ -625,53 +633,9 @@ body.light .tab.active{
   position:relative;
   display:flex;
   flex-direction:column;
-  transition:box-shadow .15s ease, transform .12s ease;
+  transition:box-shadow .18s ease;
 }
 
-.dashboardPanel.dragging{
-  opacity:.96;
-  box-shadow:0 22px 50px rgba(0,0,0,.35);
-  z-index:1000;
-}
-
-.dashboardPlaceholder{
-  grid-column:span var(--col-span,4);
-  height:var(--panel-height,320px);
-  min-height:240px;
-  border:1px dashed var(--border2);
-  border-radius:16px;
-  background:var(--ctrl-bg);
-}
-
-.panelChrome{
-  display:flex;
-  align-items:center;
-  justify-content:flex-end;
-  gap:10px;
-  padding:8px 12px;
-  margin-bottom:8px;
-  border:1px solid var(--border);
-  border-radius:12px;
-  background:rgba(16,34,53,0.88);
-  color:var(--muted);
-  cursor:grab;
-  user-select:none;
-  min-height:38px;
-  backdrop-filter:saturate(135%) blur(6px);
-}
-
-body.light .panelChrome{
-  background:rgba(247,251,253,0.92);
-}
-
-.panelChrome:active{
-  cursor:grabbing;
-}
-
-.panelGrip{
-  letter-spacing:2px;
-  font-weight:700;
-}
 
 .panelContent{
   flex:1 1 auto;
@@ -695,14 +659,14 @@ body.light .panelChrome{
 .panelBlock{
   padding:12px;
   border:1px solid var(--border);
-  border-radius:14px;
-  background:rgba(16,34,53,0.84);
+  border-radius:8px;
+  background:rgba(11,16,24,0.90);
   display:flex;
   flex-direction:column;
   min-height:0;
   height:100%;
   flex:1 1 auto;
-  backdrop-filter:saturate(135%) blur(6px);
+  backdrop-filter:saturate(140%) blur(8px);
 }
 
 body.light .panelBlock{
@@ -788,12 +752,372 @@ input[type="search"]::placeholder{
     grid-template-columns:1fr;
   }
 
-  .dashboardPanel,
-  .dashboardPlaceholder{
+  .dashboardPanel{
     grid-column:span 1 !important;
   }
 
   .panelResizeE{
     display:none;
   }
+}
+.deviceTable{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0 8px;
+}
+
+.deviceTable th{
+  text-align:left;
+  color:var(--muted);
+  font-size:12px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  padding:8px 10px;
+}
+
+.deviceTable td{
+  padding:10px;
+  background:var(--ctrl-bg);
+  border-top:1px solid var(--border);
+  border-bottom:1px solid var(--border);
+  color:var(--text);
+}
+
+.deviceTable td:first-child{
+  border-left:1px solid var(--border);
+  border-radius:12px 0 0 12px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
+}
+
+.deviceTable td:last-child{
+  border-right:1px solid var(--border);
+  border-radius:0 12px 12px 0;
+}
+
+.deviceTable button{
+  width:100%;
+  white-space:nowrap;
+}
+
+@media (max-width:700px){
+  .deviceTable{
+    font-size:12px;
+  }
+
+  .deviceTable th,
+  .deviceTable td{
+    padding:8px 6px;
+  }
+
+  .deviceTable button{
+    padding:7px 8px;
+  }
+}
+
+.deviceTable th:nth-child(3),
+.deviceTable th:nth-child(4){
+  text-align:center;
+}
+
+.deviceTable td:nth-child(3),
+.deviceTable td:nth-child(4){
+  text-align:center;
+}
+
+
+.deviceTable th:nth-child(2),
+.deviceTable td:nth-child(2){
+  text-align:center;
+}
+
+
+/* ─── GridStack layout ───────────────────────────────────────────────
+   One clean block replaces the many accumulated "fix" passes above.
+   Rule of thumb: no !important except where GridStack's own inline
+   styles need overriding (inset/position on content wrapper).        */
+
+/* Hide old SortableJS chrome helpers (kept for safety) */
+.panelChrome,
+.panelGrip { display: none; }
+
+/* Container: GridStack adds .grid-stack; switch from CSS-grid → block */
+#dashboardGrid.grid-stack {
+  display: block;
+  position: relative;
+  min-height: 400px;
+  padding-bottom: 40px;
+  overflow: visible;
+}
+
+/* Each item is absolutely positioned by GridStack */
+#dashboardGrid.grid-stack > .grid-stack-item {
+  min-height: 200px;
+  overflow: visible;
+}
+
+/* Inner wrapper fills the cell — must be absolute so Plotly can read
+   concrete pixel dimensions from getBoundingClientRect()             */
+#dashboardGrid.grid-stack .grid-stack-item-content {
+  position: absolute !important;
+  inset: 0 !important;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+}
+
+/* Full-height flex chain: content → plotDetails / panelBlock         */
+#dashboardGrid.grid-stack .panelContent,
+#dashboardGrid.grid-stack details.plotDetails,
+#dashboardGrid.grid-stack .panelBlock {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* summary row must never stretch */
+#dashboardGrid.grid-stack details.plotDetails > summary {
+  flex: 0 0 auto;
+}
+
+/* plotWrap grows to fill remaining height */
+#dashboardGrid.grid-stack .plotWrap {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Plotly target div fills plotWrap */
+#dashboardGrid.grid-stack .plotWrap > div {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Plotly SVG layers inherit size */
+#dashboardGrid.grid-stack .js-plotly-plot,
+#dashboardGrid.grid-stack .plot-container,
+#dashboardGrid.grid-stack .svg-container {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ─── 3D panel ───────────────────────────────────────────────────── */
+#panel-3d .panelBlock {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+#panel-3d #imu3dWrap {
+  flex: 1 1 auto;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+#panel-3d #imu3dFrame {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 200px;
+  border: 0;
+  display: block;
+}
+
+/* ─── Hidden panels ──────────────────────────────────────────────── */
+#panel-values[style*="display: none"],
+#dashboardGrid.grid-stack > .dashboardPanel[style*="display: none"] {
+  display: none !important;
+}
+
+/* ─── Drag & resize feedback ─────────────────────────────────────── */
+#dashboardGrid.grid-stack > .grid-stack-item { cursor: grab; }
+#dashboardGrid.grid-stack > .grid-stack-item:active { cursor: grabbing; }
+
+/* Drop-target placeholder */
+.grid-stack-placeholder > .placeholder-content {
+  border: 2px dashed var(--accent);
+  border-radius: 8px;
+  background: rgba(245,158,11,.07);
+}
+
+/* Raised z-index while dragging or resizing */
+.grid-stack-item.ui-draggable-dragging,
+.grid-stack-item.ui-resizable-resizing,
+.dashboardPanelMoving {
+  z-index: 9999 !important;
+  box-shadow: 0 22px 60px rgba(0,0,0,.45) !important;
+}
+
+/* Freeze text selection and kill pointer events inside charts/iframes */
+body.dashboardSorting {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.dashboardSorting .js-plotly-plot,
+body.dashboardSorting .plotly,
+body.dashboardSorting iframe {
+  pointer-events: none !important;
+}
+
+/* ─── GridStack reorder animation ────────────────────────────────── */
+/* Panels slide into their new position when a drag ends             */
+#dashboardGrid.grid-stack-animate > .grid-stack-item {
+  transition: left 0.2s ease, top 0.2s ease, width 0.2s ease, height 0.2s ease;
+}
+/* The panel being dragged or resized must never lag behind the cursor */
+#dashboardGrid.grid-stack-animate > .grid-stack-item.ui-draggable-dragging,
+#dashboardGrid.grid-stack-animate > .grid-stack-item.ui-resizable-resizing {
+  transition: none;
+}
+
+/* ─── Page scroll & card height ─────────────────────────────────── */
+body, html { overflow: auto; }
+.tabContent.active { overflow: auto; }
+
+/* ─── Keyboard shortcut legend ───────────────────────────────────── */
+.kbdGrid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 10px;
+  align-items: center;
+  margin-top: 4px;
+}
+.kbdGrid span {
+  font-size: .78rem;
+  color: var(--muted);
+}
+kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border2);
+  background: var(--ctrl-bg);
+  color: var(--accent);
+  font-family: ui-monospace, monospace;
+  font-size: .72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  letter-spacing: .03em;
+  line-height: 1.7;
+  justify-self: start;
+}
+.card.scrollCard { min-height: calc(100vh - 120px); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Widget shared chrome
+   ═══════════════════════════════════════════════════════════════════════════ */
+.widgetTitle {
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+
+/* ── Widget 1: Attitude Indicator ────────────────────────────────────────── */
+.horizonWrap {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.horizonWrap canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+}
+.horizonReadout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-top: 8px;
+  font-size: .75rem;
+}
+.horizonLabel {
+  color: var(--muted);
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.horizonVal {
+  color: var(--accent);
+  min-width: 52px;
+  font-size: .82rem;
+}
+.horizonSep {
+  flex: 1;
+}
+
+/* ── Layout preset buttons ───────────────────────────────────────────────── */
+.layoutBtns {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.layoutBtn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 4px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--ctrl-bg);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+  font-size: .65rem;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.layoutBtn:hover {
+  border-color: var(--border2);
+  color: var(--text);
+  background: var(--ctrl-bg2);
+}
+.layoutBtn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(251,191,36,.10);
+}
+.layoutThumb {
+  width: 54px;
+  height: 44px;
+  flex-shrink: 0;
+}
+.layoutName {
+  /* always visible — the layout label */
+}
+.layoutApplied {
+  font-size: .6rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--ok);
+  opacity: 0;
+  height: 0;
+  overflow: hidden;
+  transition: opacity .2s ease, height .2s ease;
+  pointer-events: none;
+}
+.layoutBtn.active .layoutApplied {
+  opacity: 1;
+  height: auto;
 }

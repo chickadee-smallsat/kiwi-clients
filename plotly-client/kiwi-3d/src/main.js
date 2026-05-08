@@ -5,11 +5,10 @@ import AHRS from "ahrs";
 
 const params = new URLSearchParams(location.search);
 const deviceKey = params.get("src") || "all";
-const devicePort = deviceKey === "all" ? null : Number(deviceKey);
 const demo = params.get("demo") === "1";
 const isEmbed = params.get("embed") === "1";
 
-const esUrl = devicePort ? `/devices/${devicePort}/events` : "/events";
+const esUrl = deviceKey !== "all" ? `/devices/${encodeURIComponent(deviceKey)}/events` : "/events";
 const es = new EventSource(esUrl);
 
 const scene = new THREE.Scene();
@@ -656,8 +655,7 @@ function animate() {
     gTemp.setValue(lastTemp ? lastTemp.v : NaN);
 
     const pRaw = lastPressure ? lastPressure.v : NaN;
-    const pHpa = Number.isFinite(pRaw) ? (pRaw > 2000 ? pRaw / 100 : pRaw) : NaN;
-    gPress.setValue(pHpa);
+    gPress.setValue(pRaw);
 
     gAlt.setValue(lastAltitude ? lastAltitude.v : NaN);
 

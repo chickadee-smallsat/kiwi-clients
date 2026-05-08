@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kiwi Sensor Dashboard</title>
-  <script src="./plotly-2.27.0.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/gridstack@9.2.0/dist/gridstack.min.css" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -104,57 +104,125 @@
             </div>
 
             <div class="menuSection">
+              <span class="menuSectionTitle">Layout</span>
+              <div class="layoutBtns">
+
+                <button class="layoutBtn" id="layoutRows" data-layout="rows">
+                  <svg class="layoutThumb" viewBox="0 0 54 44" fill="none" aria-hidden="true">
+                    <rect x="0"  y="0"  width="25" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="27" y="0"  width="27" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="0"  y="16" width="25" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="27" y="16" width="27" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="0"  y="32" width="16" height="12" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="19" y="32" width="16" height="12" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="38" y="32" width="16" height="12" rx="2" fill="currentColor" opacity=".3"/>
+                  </svg>
+                  <span class="layoutName">Rows</span>
+                  <span class="layoutApplied">✓ applied</span>
+                </button>
+
+                <button class="layoutBtn" id="layoutFocus" data-layout="focus">
+                  <svg class="layoutThumb" viewBox="0 0 54 44" fill="none" aria-hidden="true">
+                    <rect x="0"  y="0"  width="39" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="42" y="0"  width="12" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="0"  y="16" width="39" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="42" y="16" width="12" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="0"  y="32" width="39" height="12" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="42" y="32" width="12" height="12" rx="2" fill="currentColor" opacity=".3"/>
+                  </svg>
+                  <span class="layoutName">Focus</span>
+                  <span class="layoutApplied">✓ applied</span>
+                </button>
+
+                <button class="layoutBtn" id="layoutGrid" data-layout="grid">
+                  <svg class="layoutThumb" viewBox="0 0 54 44" fill="none" aria-hidden="true">
+                    <rect x="0"  y="0"  width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="19" y="0"  width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="38" y="0"  width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="0"  y="16" width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="19" y="16" width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="38" y="16" width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="0"  y="32" width="25" height="12" rx="2" fill="currentColor" opacity=".3"/>
+                    <rect x="27" y="32" width="27" height="12" rx="2" fill="currentColor" opacity=".3"/>
+                  </svg>
+                  <span class="layoutName">Grid</span>
+                  <span class="layoutApplied">✓ applied</span>
+                </button>
+
+              </div>
+              <button id="resetLayoutBtn" type="button" style="margin-top:8px;width:100%;">Reset to Default</button>
+            </div>
+
+            <div class="menuSection">
               <span class="menuSectionTitle">Panels</span>
               <label class="check"><input type="checkbox" id="liveValuesToggle" /> Show live values panel</label>
+              <label class="check"><input type="checkbox" id="horizonToggle" /> Show attitude indicator</label>
+              <label class="check"><input type="checkbox" id="crosshairToggle" /> Crosshair hover (unified values)</label>
+            </div>
+
+            <div class="menuSection">
+              <span class="menuSectionTitle">Keyboard shortcuts</span>
+              <div class="kbdGrid">
+                <kbd>P</kbd><span>Pause / Resume</span>
+                <kbd>R</kbd><span>Start recording</span>
+                <kbd>S</kbd><span>Stop recording</span>
+                <kbd>E</kbd><span>Export Excel</span>
+                <kbd>M</kbd><span>Toggle menu</span>
+                <kbd>Esc</kbd><span>Close menu</span>
+              </div>
             </div>
           </div>
         </details>
       </div>
 
       <div id="dashboardGrid" class="dashboardGrid">
-        <div class="dashboardPanel" id="panel-accel" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340">
+        <!-- Row 1 (y=0, h=4): Accel + Gyro fill all 12 cols -->
+        <div class="dashboardPanel" id="panel-accel" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340" data-default-x="0" data-default-y="0">
           <details class="plotDetails" open data-stream="accel">
             <summary>Accelerometer (X, Y, Z)</summary>
             <div class="plotWrap"><div id="accelPlot"></div></div>
           </details>
         </div>
 
-        <div class="dashboardPanel" id="panel-gyro" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340">
+        <div class="dashboardPanel" id="panel-gyro" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340" data-default-x="6" data-default-y="0">
           <details class="plotDetails" open data-stream="gyro">
             <summary>Gyroscope (X, Y, Z)</summary>
             <div class="plotWrap"><div id="gyroPlot"></div></div>
           </details>
         </div>
 
-        <div class="dashboardPanel" id="panel-mag" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340">
+        <!-- Row 2 (y=4, h=4): Mag + 3D fill all 12 cols -->
+        <div class="dashboardPanel" id="panel-mag" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340" data-default-x="0" data-default-y="4">
           <details class="plotDetails" open data-stream="mag">
             <summary>Magnetometer (X, Y, Z)</summary>
             <div class="plotWrap"><div id="magPlot"></div></div>
           </details>
         </div>
 
-        <div class="dashboardPanel" id="panel-temp" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300">
+        <!-- Row 3 (y=8, h=3): Temp + Pressure + Altitude fill all 12 cols -->
+        <div class="dashboardPanel" id="panel-temp" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300" data-default-x="0" data-default-y="8">
           <details class="plotDetails" open data-stream="temp">
             <summary>Temperature</summary>
             <div class="plotWrap"><div id="tempPlot"></div></div>
           </details>
         </div>
 
-        <div class="dashboardPanel" id="panel-pressure" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300">
+        <div class="dashboardPanel" id="panel-pressure" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300" data-default-x="4" data-default-y="8">
           <details class="plotDetails" open data-stream="pressure">
             <summary>Pressure</summary>
             <div class="plotWrap"><div id="pressurePlot"></div></div>
           </details>
         </div>
 
-        <div class="dashboardPanel" id="panel-altitude" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300">
+        <div class="dashboardPanel" id="panel-altitude" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300" data-default-x="8" data-default-y="8">
           <details class="plotDetails" open data-stream="altitude">
             <summary>Altitude</summary>
             <div class="plotWrap"><div id="altitudePlot"></div></div>
           </details>
         </div>
 
-        <div class="dashboardPanel" id="panel-3d" data-default-cols="5" data-min-cols="3" data-max-cols="12" data-default-height="430">
+        <!-- 3D view sits beside Mag in row 2, same 6-col width -->
+        <div class="dashboardPanel" id="panel-3d" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340" data-default-x="6" data-default-y="4">
           <div class="panelBlock">
             <div class="btnRow" style="margin-bottom:10px;">
               <button id="open3dBtn" type="button">Open 3D View</button>
@@ -165,10 +233,25 @@
                 id="imu3dFrame"
                 title="3D IMU View"
                 src="/3d/?embed=1"
-                loading="lazy"
-                referrerpolicy="no-referrer"
                 allow="fullscreen"
               ></iframe>
+            </div>
+          </div>
+        </div>
+
+        <!-- Widget: Attitude Indicator — canvas-based roll/pitch from accel -->
+        <div class="dashboardPanel" id="panel-horizon" data-default-cols="4" data-min-cols="3" data-max-cols="6" data-default-height="340" style="display:none;">
+          <div class="panelBlock">
+            <div class="widgetTitle">Attitude Indicator</div>
+            <div class="horizonWrap">
+              <canvas id="horizonCanvas"></canvas>
+            </div>
+            <div class="horizonReadout">
+              <span class="horizonLabel">Roll</span>
+              <span class="mono horizonVal" id="horizonRoll">—</span>
+              <span class="horizonSep"></span>
+              <span class="horizonLabel">Pitch</span>
+              <span class="mono horizonVal" id="horizonPitch">—</span>
             </div>
           </div>
         </div>
@@ -193,6 +276,8 @@
     </section>
   </main>
 
+  <script src="./plotly-2.27.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gridstack@9.2.0/dist/gridstack-all.min.js"></script>
   <script src="/plot.js"></script>
 </body>
 </html>

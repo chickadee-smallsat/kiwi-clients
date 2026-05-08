@@ -48,7 +48,17 @@
                 <button id="refreshBtn" type="button">Refresh</button>
               </div>
 
-              <div class="deviceList" id="deviceList" role="list"></div>
+              <table class="deviceTable">
+                <thead>
+                  <tr>
+                    <th>Device Name</th>
+                    <th>Packet Rate</th>
+                    <th>Open 3D</th>
+                    <th>Open Dashboard</th>
+                  </tr>
+                </thead>
+                <tbody id="deviceList"></tbody>
+              </table>
 
               <p class="small" style="margin-top:12px;">
                 Click a device to open its live dashboard in this window.

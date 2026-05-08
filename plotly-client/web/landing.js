@@ -17,6 +17,8 @@
   const tabs = new Map();
   let reconnects = 0;
 
+  const deviceStats = {};
+
   const params = new URLSearchParams(window.location.search);
   const board = params.get('board');
 
@@ -37,7 +39,9 @@
 
   function setConn(state, text) {
     if (!connText || !connDot || !connPill) return;
+
     connText.textContent = text;
+
     const ok = getCss('--ok');
     const warn = getCss('--warn');
     const bad = getCss('--bad');
@@ -68,16 +72,9 @@
 
   function filteredPorts() {
     const q = currentFilter();
-    const all = Array.from(devices).sort((a, b) => Number(a) - Number(b));
+    const all = Array.from(devices).sort((a, b) => String(a).localeCompare(String(b)));
     if (!q) return all;
     return all.filter((p) => String(p).includes(q));
-  }
-
-  function makeBtn(label) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    return b;
   }
 
   function activateTab(key) {
@@ -106,6 +103,7 @@
   function removeTab(key) {
     const entry = tabs.get(key);
     if (!entry) return;
+
     entry.tab.remove();
     entry.frame.remove();
     tabs.delete(key);
@@ -113,6 +111,11 @@
   }
 
   function openDeviceTab(key, labelText, url, titleText) {
+    if (!tabBar || !contentArea) {
+      window.location.href = url;
+      return;
+    }
+
     const tabKey = String(key);
 
     if (tabs.has(tabKey)) {
@@ -166,69 +169,132 @@
     listEl.innerHTML = '';
 
     for (const port of ports) {
-      const row = document.createElement('div');
-      row.style.display = 'flex';
-      row.style.gap = '10px';
-      row.style.flexWrap = 'wrap';
+      const tr = document.createElement('tr');
 
-      const dashBtn = makeBtn(`Open device ${port}`);
-      dashBtn.setAttribute('aria-label', `Open dashboard for device ${port}`);
-      dashBtn.addEventListener('click', () => {
-        const url = `/dashboard.html?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
-        openDeviceTab(port, `Device ${port}`, url, `Device ${port} dashboard`);
-      });
+      const rate = deviceStats[port]?.rate || 0;
 
-      const view3dBtn = makeBtn(`3D ${port}`);
-      view3dBtn.setAttribute('aria-label', `Open 3D view for device ${port}`);
+      const boardPart = board ? `&board=${encodeURIComponent(board)}` : '';
+      const dashUrl = `/dashboard.html?src=${encodeURIComponent(port)}${boardPart}`;
+      const view3dUrl = `/3d/?src=${encodeURIComponent(port)}${boardPart}`;
+
+      const tdDevice = document.createElement('td');
+      tdDevice.textContent = port;
+
+      const tdRate = document.createElement('td');
+      tdRate.textContent = `${rate} pkt/s`;
+
+      const td3d = document.createElement('td');
+      const view3dBtn = document.createElement('button');
+      view3dBtn.type = 'button';
+      view3dBtn.className = 'open3dBtn';
+      view3dBtn.textContent = 'Open 3D';
       view3dBtn.addEventListener('click', () => {
-        const key = `${port}-3d`;
-        const url = `/3d/?src=${encodeURIComponent(port)}${board ? `&board=${encodeURIComponent(board)}` : ''}`;
-        openDeviceTab(key, `3D ${port}`, url, `Device ${port} 3D view`);
+        openDeviceTab(
+          `device3d-${port}`,
+          `3D ${port}`,
+          view3dUrl,
+          `3D View ${port}`
+        );
       });
+      td3d.appendChild(view3dBtn);
 
-      row.appendChild(dashBtn);
-      row.appendChild(view3dBtn);
-      listEl.appendChild(row);
+      const tdOpen = document.createElement('td');
+      const openBtn = document.createElement('button');
+      openBtn.type = 'button';
+      openBtn.className = 'deviceNameBtn';
+      openBtn.textContent = 'Open Dashboard';
+      openBtn.addEventListener('click', () => {
+        openDeviceTab(
+          `device-${port}`,
+          `Device ${port}`,
+          dashUrl,
+          `Dashboard ${port}`
+        );
+      });
+      tdOpen.appendChild(openBtn);
+
+      tr.appendChild(tdDevice);
+      tr.appendChild(tdRate);
+      tr.appendChild(td3d);
+      tr.appendChild(tdOpen);
+
+      listEl.appendChild(tr);
     }
   }
 
-  function addPorts(ports) {
-    for (const p of ports) devices.add(String(p));
-    render();
+  function normalizeDeviceData(data) {
+    if (!Array.isArray(data)) return [];
+
+    return data
+      .map(d => {
+        if (typeof d === 'string' || typeof d === 'number') {
+          return { port: String(d), rate: deviceStats[String(d)]?.rate || 0 };
+        }
+
+        if (d && typeof d === 'object') {
+          const port = d.port ?? d.device ?? d.id ?? d.device_id ?? d.deviceId;
+          if (port === undefined || port === null || String(port).trim() === '') return null;
+
+          return {
+            port: String(port),
+            rate: Number.isFinite(Number(d.rate ?? d.packet_rate ?? d.packetRate))
+              ? Number(d.rate ?? d.packet_rate ?? d.packetRate)
+              : deviceStats[String(port)]?.rate || 0,
+          };
+        }
+
+        return null;
+      })
+      .filter(Boolean);
   }
 
-  function setPorts(ports) {
+  function setPorts(data) {
+    const normalized = normalizeDeviceData(data);
+
     devices.clear();
-    for (const p of ports) devices.add(String(p));
+
+    normalized.forEach(d => {
+      const id = String(d.port);
+      devices.add(id);
+      deviceStats[id] = { rate: d.rate };
+    });
+
+    Object.keys(deviceStats).forEach(id => {
+      if (!devices.has(id)) delete deviceStats[id];
+    });
+
     render();
   }
-function fetchDevicesOnce() {
-  if (refreshBtn) {
-    refreshBtn.disabled = true;
-    refreshBtn.textContent = 'Refreshing...';
-  }
 
-  return fetch('/devices')
-    .then((r) => r.json())
-    .then((ports) => {
-      if (Array.isArray(ports)) setPorts(ports);
+  function fetchDevicesOnce() {
+    if (refreshBtn) {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = 'Refreshing...';
+    }
 
-      if (refreshBtn) refreshBtn.textContent = 'Updated';
+    return fetch('/devices')
+      .then((r) => r.json())
+      .then((ports) => {
+        if (Array.isArray(ports)) {
+          setPorts(ports);
+        }
 
-      setTimeout(() => {
+        if (refreshBtn) refreshBtn.textContent = 'Updated';
+
+        setTimeout(() => {
+          if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = 'Refresh';
+          }
+        }, 700);
+      })
+      .catch(() => {
         if (refreshBtn) {
           refreshBtn.disabled = false;
-          refreshBtn.textContent = 'Refresh';
+          refreshBtn.textContent = 'Retry';
         }
-      }, 700);
-    })
-    .catch(() => {
-      if (refreshBtn) {
-        refreshBtn.disabled = false;
-        refreshBtn.textContent = 'Retry';
-      }
-    });
-}
+      });
+  }
 
   initTheme();
 
@@ -274,12 +340,16 @@ function fetchDevicesOnce() {
 
   es.onmessage = (e) => {
     let parsed;
+
     try {
       parsed = JSON.parse(e.data);
     } catch {
       return;
     }
-    if (Array.isArray(parsed)) setPorts(parsed);
+
+    if (Array.isArray(parsed)) {
+      setPorts(parsed);
+    }
   };
 
   es.onerror = () => {
