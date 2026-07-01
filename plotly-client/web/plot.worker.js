@@ -77,7 +77,7 @@ function normalizeItem(raw) {
         };
     }
 
-    if (type === "temp" || type === "pressure" || type === "altitude" || type === "humidity" || type === "gas_resistance") {
+    if (type === "temp" || type === "pressure" || type === "altitude" || type === "humidity" || type === "humi_temp" || type === "gas_resistance") {
         const value = safeNum(raw.value);
         if (value === null) return null;
 
