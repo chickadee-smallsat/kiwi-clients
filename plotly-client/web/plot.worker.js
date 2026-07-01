@@ -183,6 +183,7 @@ function unpackSerde(raw) {
 
     if (variant === "Humi" && Array.isArray(values) && values.length === 3) {
         return [
+            normalizeItem({ sensor: "humi_temp", value: values[0], ts }),
             normalizeItem({ sensor: "humidity", value: values[1], ts }),
             normalizeItem({ sensor: "gas_resistance", value: values[2], ts }),
         ].filter(Boolean);

@@ -60,6 +60,7 @@
                     <label class="check"><input type="checkbox" value="pressure" checked /> Pressure</label>
                     <label class="check"><input type="checkbox" value="altitude" checked /> Altitude</label>
                     <label class="check"><input type="checkbox" value="humidity" checked /> Humidity</label>
+                    <label class="check"><input type="checkbox" value="humi_temp" checked /> Humidity Temp</label>
                     <label class="check"><input type="checkbox" value="gas_resistance" checked /> Gas Resistance</label>
                   </div>
 
@@ -71,6 +72,7 @@
                     <option value="pressure" selected>pressure</option>
                     <option value="altitude" selected>altitude</option>
                     <option value="humidity" selected>humidity</option>
+                    <option value="humi_temp" selected>humi_temp</option>
                     <option value="gas_resistance" selected>gas_resistance</option>
                   </select>
                 </div>
@@ -163,6 +165,13 @@
           <details class="plotDetails" open data-stream="humidity">
             <summary>Humidity</summary>
             <div class="plotWrap"><div id="humidityPlot"></div></div>
+          </details>
+        </div>
+
+        <div class="dashboardPanel" id="panel-humi_temp" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300">
+          <details class="plotDetails" open data-stream="humi_temp">
+            <summary>Humidity Temperature</summary>
+            <div class="plotWrap"><div id="humiTempPlot"></div></div>
           </details>
         </div>
 

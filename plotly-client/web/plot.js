@@ -37,6 +37,7 @@
     const pressureDiv = document.getElementById('pressurePlot');
     const altitudeDiv = document.getElementById('altitudePlot');
     const humidityDiv = document.getElementById('humidityPlot');
+    const humiTempDiv = document.getElementById('humiTempPlot');
     const gasResistanceDiv = document.getElementById('gasResistancePlot');
 
     const streamChecksEl = document.getElementById('streamChecks');
@@ -104,6 +105,7 @@
         pressure: { ts: [], v: [] },
         altitude: { ts: [], v: [] },
         humidity: { ts: [], v: [] },
+        humi_temp: { ts: [], v: [] },
         gas_resistance: { ts: [], v: [] },
     };
 
@@ -115,6 +117,7 @@
         pressure: { ts: [], v: [] },
         altitude: { ts: [], v: [] },
         humidity: { ts: [], v: [] },
+        humi_temp: { ts: [], v: [] },
         gas_resistance: { ts: [], v: [] },
     };
 
@@ -332,7 +335,7 @@
 
     function applyThemeToPlots(theme) {
         const t = THEMES[theme] || THEMES.dark;
-        const divs = [accelDiv, gyroDiv, magDiv, tempDiv, pressureDiv, altitudeDiv, humidityDiv, gasResistanceDiv];
+        const divs = [accelDiv, gyroDiv, magDiv, tempDiv, pressureDiv, altitudeDiv, humidityDiv, humiTempDiv, gasResistanceDiv];
 
         for (const div of divs) {
             if (!div) continue;
@@ -379,6 +382,7 @@
         applyScalar(pressureDiv, colors[1]);
         applyScalar(altitudeDiv, colors[2]);
         applyScalar(humidityDiv, colors[3]);
+        applyScalar(humiTempDiv, colors[5]);
         applyScalar(gasResistanceDiv, colors[4]);
     }
 
@@ -490,7 +494,7 @@
     }
 
     function resizeAllPlots() {
-        [accelDiv, gyroDiv, magDiv, tempDiv, pressureDiv, altitudeDiv, humidityDiv, gasResistanceDiv].forEach(div => {
+        [accelDiv, gyroDiv, magDiv, tempDiv, pressureDiv, altitudeDiv, humidityDiv, humiTempDiv, gasResistanceDiv].forEach(div => {
             resizePlot(div);
         });
     }
@@ -970,6 +974,7 @@
     if (pressureDiv) initScalarPlot(pressureDiv, 'hPa');
     if (altitudeDiv) initScalarPlot(altitudeDiv, 'm');
     if (humidityDiv) initScalarPlot(humidityDiv, '%');
+    if (humiTempDiv) initScalarPlot(humiTempDiv, '°C');
     if (gasResistanceDiv) initScalarPlot(gasResistanceDiv, 'Ω');
 
     // Y-axis range dialog setup
@@ -1154,6 +1159,12 @@
 
             draw.humidity.ts.push(item.ts_s);
             draw.humidity.v.push(item.value);
+        } else if (item.sensor === 'humi_temp' && shouldDraw('humi_temp') && plotVisible(humiTempDiv)) {
+            store.humi_temp.ts.push(item.ts_s);
+            store.humi_temp.v.push(item.value);
+
+            draw.humi_temp.ts.push(item.ts_s);
+            draw.humi_temp.v.push(item.value);
         } else if (item.sensor === 'gas_resistance' && shouldDraw('gas_resistance') && plotVisible(gasResistanceDiv)) {
             store.gas_resistance.ts.push(item.ts_s);
             store.gas_resistance.v.push(item.value);
@@ -1232,6 +1243,11 @@
     function clearHumidityDraw() {
         draw.humidity.ts.length = 0;
         draw.humidity.v.length = 0;
+    }
+
+    function clearHumiTempDraw() {
+        draw.humi_temp.ts.length = 0;
+        draw.humi_temp.v.length = 0;
     }
 
     function clearGasResistanceDraw() {
@@ -1430,6 +1446,15 @@
             clearHumidityDraw();
         }
 
+        if (humiTempDiv && draw.humi_temp.ts.length) {
+            const latest = draw.humi_temp.ts[draw.humi_temp.ts.length - 1];
+
+            Plotly.extendTraces(humiTempDiv, { x: [draw.humi_temp.ts], y: [draw.humi_temp.v] }, [0]);
+            Plotly.relayout(humiTempDiv, { 'xaxis.range': [latest - windowSec, latest] });
+
+            clearHumiTempDraw();
+        }
+
         if (gasResistanceDiv && draw.gas_resistance.ts.length) {
             const latest = draw.gas_resistance.ts[draw.gas_resistance.ts.length - 1];
 
@@ -1448,6 +1473,7 @@
         trimScalarStore(store.pressure);
         trimScalarStore(store.altitude);
         trimScalarStore(store.humidity);
+        trimScalarStore(store.humi_temp);
         trimScalarStore(store.gas_resistance);
 
         resyncVector(accelDiv, selectVectorWindow(store.accel));
@@ -1457,6 +1483,7 @@
         resyncScalar(pressureDiv, selectScalarWindow(store.pressure));
         resyncScalar(altitudeDiv, selectScalarWindow(store.altitude));
         resyncScalar(humidityDiv, selectScalarWindow(store.humidity));
+        resyncScalar(humiTempDiv, selectScalarWindow(store.humi_temp));
         resyncScalar(gasResistanceDiv, selectScalarWindow(store.gas_resistance));
 
         schedulePlotResize();
@@ -1475,7 +1502,7 @@
     // Add a Y-range button to each plot panel — must run after initPanelLayout()
     // creates .panelControls, otherwise closest('.dashboardPanel') exists but
     // panel.querySelector('.panelControls') returns null.
-    for (const div of [accelDiv, gyroDiv, magDiv, tempDiv, pressureDiv, altitudeDiv, humidityDiv, gasResistanceDiv]) {
+    for (const div of [accelDiv, gyroDiv, magDiv, tempDiv, pressureDiv, altitudeDiv, humidityDiv, humiTempDiv, gasResistanceDiv]) {
         if (!div) continue;
         const panel = div.closest('.dashboardPanel');
         if (!panel) continue;
