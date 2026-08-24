@@ -643,8 +643,7 @@ function fetchDevicesOnce() {
 
   setConn('warn', 'connecting…');
 
-  const sw = new SharedWorker('/sse.shared.worker.js');
-  const swPort = sw.port;
+  const swPort = openSseConnection();
   swPort.start();
 
   swPort.onmessage = (ev) => {

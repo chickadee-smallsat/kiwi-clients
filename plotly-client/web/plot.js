@@ -1719,8 +1719,7 @@
 
     // A single SharedWorker holds one SSE connection for the whole origin.
     // All dashboards and 3D iframes share it; each filters by device ID on the client side.
-    const sw = new SharedWorker('/sse.shared.worker.js');
-    const swPort = sw.port;
+    const swPort = openSseConnection();
     swPort.start();
 
     // Rendering is gated on whether this tab is the active one.

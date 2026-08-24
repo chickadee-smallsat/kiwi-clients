@@ -12,3 +12,9 @@ kiwi-desktop/src-tauri/gen/
 kiwi-desktop/src-tauri/target/
 kiwi-desktop/src-tauri/gen/
 kiwi-desktop/node_modules/
+plotly-app-ios/**/xcuserdata/
+plotly-app-ios/DerivedData/
+# Rebuilt from plotly-client via: cargo build --release --target aarch64-apple-ios[-sim] --lib,
+# then xcodebuild -create-xcframework (see plan/session notes). Not source, don't commit binaries.
+plotly-app-ios/Frameworks/*.xcframework
+.cl*

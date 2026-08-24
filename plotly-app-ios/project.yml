@@ -1,0 +1,33 @@
+name: KiwiPlotter
+options:
+  bundleIdPrefix: com.chickadee
+configs:
+  Debug: debug
+  Release: release
+targets:
+  KiwiPlotter:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: KiwiPlotter/Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.chickadee.kiwiplotter
+        SWIFT_OBJC_BRIDGING_HEADER: KiwiPlotter/Bridging/KiwiPlotter-Bridging-Header.h
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        INFOPLIST_KEY_CFBundleDisplayName: "Kiwi Plotter"
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Kiwi Plotter listens on your local network for measurement data broadcast by Kiwi devices."
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: GYYK7RFX66
+        # The xcframework only carries an arm64 simulator slice (built on Apple Silicon);
+        # skip the x86_64 simulator arch Xcode would otherwise include by default.
+        "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+    dependencies:
+      - framework: Frameworks/KiwiClient.xcframework
+        embed: false

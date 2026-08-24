@@ -1018,4 +1018,14 @@ input[type="search"]::placeholder{
   .panelResizeE{
     display:none;
   }
+
+  /* table-layout:fixed at width:100% squeezes the unspecified-width columns (Data Rate,
+     Packet Rate, Linktime, Uptime) below their content width on narrow screens, causing
+     nowrap text to visually overlap into neighboring cells. Size columns to content instead
+     and let .deviceTableWrap's overflow-x:auto handle anything still too wide to fit. */
+  .deviceTable{
+    table-layout:auto;
+    width:max-content;
+    min-width:100%;
+  }
 }
