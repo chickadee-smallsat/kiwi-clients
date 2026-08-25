@@ -10,11 +10,13 @@
 		46AB4282B62CBCC62F5BEAA8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D6352661321F1601087EF59 /* ContentView.swift */; };
 		80AF15648CDB134E16805183 /* KiwiPlotterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4C7EEBAADB7C8B24F1A6FCA /* KiwiPlotterApp.swift */; };
 		94FBDD12C40C017C72C5BA07 /* KiwiClient.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = FC2AD230DE16BE65E7DEDAA8 /* KiwiClient.xcframework */; };
+		C6E1A5E67981FE70490C50EE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1407C28390451E6A2FF79FF /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		3C4AC291EE80B9668ECF120E /* KiwiPlotter.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = KiwiPlotter.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4D6352661321F1601087EF59 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		B1407C28390451E6A2FF79FF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F4C7EEBAADB7C8B24F1A6FCA /* KiwiPlotterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KiwiPlotterApp.swift; sourceTree = "<group>"; };
 		FC2AD230DE16BE65E7DEDAA8 /* KiwiClient.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = KiwiClient.xcframework; path = Frameworks/KiwiClient.xcframework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -42,6 +44,7 @@
 		787AA40FA37CA2E51928F716 = {
 			isa = PBXGroup;
 			children = (
+				8A426C0F74642B540CAD4BF8 /* KiwiPlotter */,
 				9FE2C6E434F20297BB12CBD7 /* Sources */,
 				5FC78B4330207ACA3D8A62F6 /* Frameworks */,
 				8A4210B019C4BD7E2DA15ADD /* Products */,
@@ -54,6 +57,14 @@
 				3C4AC291EE80B9668ECF120E /* KiwiPlotter.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		8A426C0F74642B540CAD4BF8 /* KiwiPlotter */ = {
+			isa = PBXGroup;
+			children = (
+				B1407C28390451E6A2FF79FF /* Assets.xcassets */,
+			);
+			path = KiwiPlotter;
 			sourceTree = "<group>";
 		};
 		9FE2C6E434F20297BB12CBD7 /* Sources */ = {
@@ -74,6 +85,7 @@
 			buildConfigurationList = 0E80389B9CDDC1B0CB58778F /* Build configuration list for PBXNativeTarget "KiwiPlotter" */;
 			buildPhases = (
 				CEEC6980A70B33D9C3BC8362 /* Sources */,
+				16E43962121BEC0AE23D0DDE /* Resources */,
 				68365BC7233AC1A539F3F463 /* Frameworks */,
 			);
 			buildRules = (
@@ -120,6 +132,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		16E43962121BEC0AE23D0DDE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C6E1A5E67981FE70490C50EE /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		CEEC6980A70B33D9C3BC8362 /* Sources */ = {

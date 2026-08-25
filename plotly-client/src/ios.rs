@@ -19,19 +19,17 @@ fn handle_slot() -> &'static Mutex<Option<ServerHandle>> {
 /// `http://127.0.0.1:<http_port>/devices` from Swift to detect readiness, matching the desktop
 /// Electron shell's startup pattern.
 ///
-/// Returns 0 on success, -1 if a server is already running.
+/// Always tears down any previous instance first (best-effort, see [`kiwi_stop`]), so it's safe
+/// to call again after iOS suspends or kills the app's background networking — the Swift side
+/// doesn't need to know whether the old server is still alive, just that it wants a fresh one.
+/// Always returns 0.
 #[unsafe(no_mangle)]
 pub extern "C" fn kiwi_start(http_port: u16, udp_port: u16) -> i32 {
     LOG_INIT.get_or_init(|| {
         env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
     });
 
-    {
-        let existing = handle_slot().lock().unwrap();
-        if existing.is_some() {
-            return -1;
-        }
-    }
+    kiwi_stop();
 
     let args = Args {
         udp_addr: "0.0.0.0".to_string(),
@@ -54,15 +52,18 @@ pub extern "C" fn kiwi_start(http_port: u16, udp_port: u16) -> i32 {
     0
 }
 
-/// Gracefully stops a server started with [`kiwi_start`]. No-op if none is running.
+/// Stops a server started with [`kiwi_start`]. No-op if none is running.
 #[unsafe(no_mangle)]
 pub extern "C" fn kiwi_stop() {
     let handle = handle_slot().lock().unwrap().take();
     if let Some(handle) = handle {
         // `ServerHandle::stop` is async; this FFI entry point is synchronous, so drive it to
-        // completion on a throwaway single-threaded runtime.
+        // completion on a throwaway single-threaded runtime. Non-graceful (`false`): a stale
+        // connection left open by a suspended WKWebView (the exact case `kiwi_start` calls this
+        // for) may never close on its own, and a graceful drain would hang waiting for it —
+        // taking kiwi_start's restart down with it.
         if let Ok(rt) = tokio::runtime::Builder::new_current_thread().build() {
-            rt.block_on(handle.stop(true));
+            rt.block_on(handle.stop(false));
         }
     }
 }
