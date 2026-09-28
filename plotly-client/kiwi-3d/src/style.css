@@ -1,0 +1,289 @@
+/* 3D view overlays. Colour tokens and fonts come from /theme.css. */
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* Embedded in the dashboard panel: let the panel show through. */
+html.embed,
+body.embed {
+  background: transparent;
+}
+
+canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.glass {
+  background: var(--surface-strong);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  box-shadow: var(--shadow), var(--edge-light);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  color: var(--text);
+}
+
+/* Readout panel (standalone view) */
+.hud {
+  position: fixed;
+  left: 16px;
+  top: 16px;
+  z-index: 10;
+  width: 300px;
+  padding: 14px 16px 16px;
+  font-size: 12.5px;
+}
+
+.hudHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.hudTitle {
+  font-weight: 650;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.hudDevice {
+  color: var(--text-2);
+  font: 500 12px var(--font-mono);
+}
+
+.hudBadge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.hudBadge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.hudBadge.frozen {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.hudRows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px 12px;
+  align-items: center;
+}
+
+.hudLabel {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-2);
+}
+
+.hudLabel::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--c, var(--text-3));
+}
+
+.hudVal {
+  font: 500 12px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.hudDivider {
+  grid-column: 1 / -1;
+  height: 1px;
+  background: var(--hairline);
+  margin: 2px 0;
+}
+
+.hudControls {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.hudBtn {
+  flex: 1;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: 500 12.5px var(--font-sans);
+  cursor: pointer;
+}
+
+.hudBtn:hover {
+  background: var(--surface-press);
+}
+
+.hudSlider {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  color: var(--text-2);
+}
+
+.hudSlider input {
+  accent-color: var(--accent);
+  width: 100%;
+}
+
+/* Barometer gauges */
+.gaugeLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.gaugeCol {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gaugeCol.left {
+  left: 16px;
+}
+
+.gaugeCol.right {
+  right: 16px;
+}
+
+.hud ~ .gaugeLayer .gaugeCol.left {
+  top: auto;
+  bottom: 16px;
+  transform: none;
+}
+
+.gauge {
+  width: 76px;
+  height: 230px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 9px;
+  box-sizing: border-box;
+}
+
+.gaugeTitle {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.gaugeValue {
+  font: 600 15px/1.1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.gaugeUnit {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.gaugeTrack {
+  position: relative;
+  flex: 1;
+  border-radius: 8px;
+  background: var(--surface-hover);
+  border: 1px solid var(--hairline);
+  overflow: hidden;
+}
+
+.gaugeTrack::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(to top, var(--hairline) 0 1px, transparent 1px 16px);
+}
+
+.gaugeFill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(to top, color-mix(in srgb, var(--c) 45%, transparent), color-mix(in srgb, var(--c) 5%, transparent));
+  transition: height 0.25s ease;
+}
+
+.gaugeMarker {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--c);
+  box-shadow: 0 0 10px var(--c);
+  transition: top 0.25s ease;
+}
+
+/* Embedded panel: compact roll / pitch / yaw readout along the bottom. */
+.attitudeChip {
+  position: fixed;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  gap: 16px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.attitudeItem {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.attitudeLabel {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.attitudeVal {
+  min-width: 6ch;
+  font: 600 12.5px/1 var(--font-mono);
+  color: var(--text);
+  text-align: right;
+}

@@ -1,23 +1,56 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import AHRS from "ahrs";
+import { Madgwick } from "./madgwick.js";
+import { decodeMeasurement } from "../../web/kiwi-protocol.js";
+import "./style.css";
 
 const params = new URLSearchParams(location.search);
-const deviceKey = params.get("src") || "all";
+const deviceKey = params.get("src");
 const demo = params.get("demo") === "1";
 const isEmbed = params.get("embed") === "1";
 
-const esUrl = deviceKey !== "all" ? `/devices/${encodeURIComponent(deviceKey)}/events` : "/events";
-const es = new EventSource(esUrl);
+// The viewer shows one device; without one (and outside demo mode) go pick it.
+if (!deviceKey && !demo) location.replace("/");
+const esUrl = `/devices/${encodeURIComponent(deviceKey ?? "")}/events`;
+
+// Shared fonts and colour tokens (served by plotly-client, not bundled).
+const themeLink = document.createElement("link");
+themeLink.rel = "stylesheet";
+themeLink.href = "/theme.css";
+document.head.appendChild(themeLink);
+
+function applyTheme(theme) {
+  for (const node of [document.documentElement, document.body]) {
+    node.classList.toggle("light", theme === "light");
+    node.classList.toggle("dark", theme !== "light");
+  }
+}
+document.documentElement.classList.toggle("embed", isEmbed);
+document.body.classList.toggle("embed", isEmbed);
+applyTheme(localStorage.getItem("theme") || "dark");
+// The dashboard calls this when its theme changes.
+window.kiwiSetTheme = applyTheme;
+window.addEventListener("storage", (e) => {
+  if (e.key === "theme" && e.newValue) applyTheme(e.newValue);
+});
+
+/** Create an element with a class name and optional text. */
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
 
 const scene = new THREE.Scene();
 
 const gravityArrow = new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 0), 0.8, 0xff4444);
 scene.add(gravityArrow);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 100);
 camera.position.set(0.6, 0.4, 1.0);
+const CAMERA_DIR = new THREE.Vector3(0.6, 0.4, 1.0).normalize();
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -29,94 +62,66 @@ renderer.toneMappingExposure = 1.2;
 document.body.appendChild(renderer.domElement);
 
 let hud = null;
+let hudBadge = null;
+const hudVals = {};
 let resetBtn = null;
 let freezeBtn = null;
-let betaWrap = null;
 let betaVal = null;
 let betaSlider = null;
 
 if (!isEmbed) {
-  hud = document.createElement("div");
-  hud.style.position = "fixed";
-  hud.style.left = "12px";
-  hud.style.top = "12px";
-  hud.style.padding = "10px 12px";
-  hud.style.borderRadius = "10px";
-  hud.style.font = "12px ui-monospace, SFMono-Regular, Menlo, monospace";
-  hud.style.background = "rgba(0,0,0,0.55)";
-  hud.style.color = "#fff";
-  hud.style.zIndex = "9999";
-  hud.style.whiteSpace = "pre";
-  hud.textContent = "starting…";
-  document.body.appendChild(hud);
+  hud = el("div", "hud glass");
 
-  resetBtn = document.createElement("button");
-  resetBtn.textContent = "Reset";
-  resetBtn.style.position = "fixed";
-  resetBtn.style.left = "12px";
-  resetBtn.style.top = "92px";
-  resetBtn.style.padding = "8px 10px";
-  resetBtn.style.borderRadius = "10px";
-  resetBtn.style.border = "1px solid rgba(255,255,255,0.25)";
-  resetBtn.style.background = "rgba(0,0,0,0.55)";
-  resetBtn.style.color = "#fff";
-  resetBtn.style.cursor = "pointer";
-  resetBtn.style.zIndex = "9999";
-  document.body.appendChild(resetBtn);
+  const head = el("div", "hudHead");
+  head.append(el("span", "hudTitle", "Orientation"), el("span", "hudDevice", deviceKey || "demo"));
+  hudBadge = el("span", "hudBadge", "LIVE");
+  head.appendChild(hudBadge);
+  hud.appendChild(head);
 
-  freezeBtn = document.createElement("button");
-  freezeBtn.textContent = "Freeze";
-  freezeBtn.style.position = "fixed";
-  freezeBtn.style.left = "82px";
-  freezeBtn.style.top = "92px";
-  freezeBtn.style.padding = "8px 10px";
-  freezeBtn.style.borderRadius = "10px";
-  freezeBtn.style.border = "1px solid rgba(255,255,255,0.25)";
-  freezeBtn.style.background = "rgba(0,0,0,0.55)";
-  freezeBtn.style.color = "#fff";
-  freezeBtn.style.cursor = "pointer";
-  freezeBtn.style.zIndex = "9999";
-  document.body.appendChild(freezeBtn);
+  const rows = el("div", "hudRows");
+  for (const [key, label, color] of [
+    ["accel", "Accel (g)", "var(--c-accel)"],
+    ["gyro", "Gyro (°/s)", "var(--c-gyro)"],
+    ["mag", "Mag (mG)", "var(--c-mag)"],
+    [null],
+    ["euler", "Roll · pitch · yaw", "var(--accent)"],
+    ["rate", "Sample rate", "var(--text-3)"],
+  ]) {
+    if (!key) {
+      rows.appendChild(el("div", "hudDivider"));
+      continue;
+    }
+    const l = el("span", "hudLabel", label);
+    l.style.setProperty("--c", color);
+    hudVals[key] = el("span", "hudVal", "—");
+    rows.append(l, hudVals[key]);
+  }
+  hud.appendChild(rows);
 
-  betaWrap = document.createElement("div");
-  betaWrap.style.position = "fixed";
-  betaWrap.style.left = "12px";
-  betaWrap.style.top = "132px";
-  betaWrap.style.padding = "10px 12px";
-  betaWrap.style.borderRadius = "10px";
-  betaWrap.style.border = "1px solid rgba(255,255,255,0.15)";
-  betaWrap.style.background = "rgba(0,0,0,0.55)";
-  betaWrap.style.color = "#fff";
-  betaWrap.style.zIndex = "9999";
-  betaWrap.style.font = "12px ui-monospace, SFMono-Regular, Menlo, monospace";
-  betaWrap.style.display = "flex";
-  betaWrap.style.gap = "10px";
-  betaWrap.style.alignItems = "center";
-  document.body.appendChild(betaWrap);
+  const ctl = el("div", "hudControls");
+  resetBtn = el("button", "hudBtn", "Reset orientation");
+  freezeBtn = el("button", "hudBtn", "Freeze");
+  ctl.append(resetBtn, freezeBtn);
+  hud.appendChild(ctl);
 
-  const betaLabel = document.createElement("span");
-  betaLabel.textContent = "beta";
-  betaWrap.appendChild(betaLabel);
-
-  betaVal = document.createElement("span");
-  betaVal.textContent = "0.08";
-  betaWrap.appendChild(betaVal);
-
+  const slider = el("label", "hudSlider");
   betaSlider = document.createElement("input");
   betaSlider.type = "range";
   betaSlider.min = "0.02";
   betaSlider.max = "0.25";
   betaSlider.step = "0.01";
   betaSlider.value = "0.08";
-  betaSlider.style.width = "140px";
-  betaWrap.appendChild(betaSlider);
+  betaVal = el("span", "hudVal", "0.08");
+  slider.append(el("span", null, "Filter gain β"), betaSlider, betaVal);
+  hud.appendChild(slider);
+
+  document.body.appendChild(hud);
 }
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableRotate = false;
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
-controls.target.set(0, 0.12, 0);
 controls.update();
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.8));
@@ -126,30 +131,50 @@ scene.add(dir);
 
 let model = null;
 const loader = new GLTFLoader();
+// Radius of the sphere the model sweeps while rotating about its origin.
+let modelRadius = 0;
 loader.load("kiwi.glb", (gltf) => {
   model = gltf.scene;
   model.scale.setScalar(3);
   scene.add(model);
+
+  const box = new THREE.Box3().setFromObject(model);
+  modelRadius = Math.max(box.min.length(), box.max.length());
+  // Keep the gravity arrow in proportion to the board, just past its edge.
+  gravityArrow.setLength(modelRadius * 1.4, modelRadius * 0.25, modelRadius * 0.12);
+  frameModel();
 });
+
+/** Place the camera so the rotating board fills most of the view. */
+function frameModel() {
+  if (!modelRadius) return;
+  const vFov = camera.fov * DEG2RAD;
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+  const fill = isEmbed ? 0.8 : 0.6; // fraction of the view the board spans
+  const dist = modelRadius / Math.sin(Math.min(vFov, hFov) / 2) / fill;
+  controls.target.set(0, 0, 0);
+  camera.position.copy(CAMERA_DIR).multiplyScalar(dist);
+  controls.update();
+}
 
 let lastAccel = null;
 let lastGyro = null;
 let lastMag = null;
 
-let lastTemp = null;
-let lastPressure = null;
-let lastAltitude = null;
+// Latest barometer readings (plain numbers).
+let lastTemp = NaN;
+let lastPressure = NaN;
+let lastAltitude = NaN;
 
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
 
 let betaUi = 0.08;
-const ahrs = new AHRS({ algorithm: "Madgwick", sampleInterval: 5, beta: betaUi });
+const ahrs = new Madgwick({ beta: betaUi }); // step size is passed with each update
 
-let qOffset = new THREE.Quaternion();
-let qTarget = new THREE.Quaternion();
-let qDisplay = new THREE.Quaternion();
-const qModelAlign = new THREE.Quaternion();
+const qOffset = new THREE.Quaternion(); // set by "Reset orientation"
+const qTarget = new THREE.Quaternion();
+const qDisplay = new THREE.Quaternion();
 
 let frozen = false;
 
@@ -159,22 +184,15 @@ let gTemp = null,
   gAlt = null;
 let lastGaugeUpdateMs = 0;
 
-function remapAccel(x, y, z) {
-  return [x, z, -y];
-}
-
-function remapGyro(x, y, z) {
-  return [x, z, -y];
-}
-
-function remapMag(x, y, z) {
+// Sensor axes → the model's frame (three.js is y-up).
+function toModelFrame(x, y, z) {
   return [x, z, -y];
 }
 
 if (resetBtn) {
+  // Make the current attitude the reference, so the model shows level.
   resetBtn.addEventListener("click", () => {
-    if (!model) return;
-    qOffset.copy(model.quaternion).invert();
+    if (lastAHRSQuat) qOffset.copy(lastAHRSQuat).invert();
   });
 }
 
@@ -182,6 +200,10 @@ if (freezeBtn) {
   freezeBtn.addEventListener("click", () => {
     frozen = !frozen;
     freezeBtn.textContent = frozen ? "Resume" : "Freeze";
+    if (hudBadge) {
+      hudBadge.textContent = frozen ? "FROZEN" : "LIVE";
+      hudBadge.classList.toggle("frozen", frozen);
+    }
   });
 }
 
@@ -196,169 +218,63 @@ if (betaSlider) {
   });
 }
 
-function makeGauge(title, unit, min, max) {
-  const wrap = document.createElement("div");
-  wrap.style.width = "60px";
-  wrap.style.height = "240px";
-  wrap.style.borderRadius = "14px";
-  wrap.style.border = "1px solid rgba(255,255,255,0.14)";
-  wrap.style.background = "rgba(0,0,0,0.28)";
-  wrap.style.backdropFilter = "blur(10px)";
-  wrap.style.display = "flex";
-  wrap.style.flexDirection = "column";
-  wrap.style.padding = "10px 8px";
-  wrap.style.boxSizing = "border-box";
-  wrap.style.gap = "8px";
-  wrap.style.boxShadow = "0 10px 24px rgba(0,0,0,0.25)";
-
-  const head = document.createElement("div");
-  head.style.display = "flex";
-  head.style.flexDirection = "column";
-  head.style.gap = "2px";
-
-  const t = document.createElement("div");
-  t.textContent = title;
-  t.style.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
-  t.style.color = "rgba(255,255,255,0.92)";
-  head.appendChild(t);
-
-  const v = document.createElement("div");
-  v.textContent = "—";
-  v.style.font = "13px ui-monospace, SFMono-Regular, Menlo, monospace";
-  v.style.color = "rgba(255,255,255,0.98)";
-  head.appendChild(v);
-
-  const u = document.createElement("div");
-  u.textContent = unit;
-  u.style.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
-  u.style.color = "rgba(255,255,255,0.55)";
-  head.appendChild(u);
-
-  wrap.appendChild(head);
-
-  const track = document.createElement("div");
-  track.style.position = "relative";
-  track.style.flex = "1";
-  track.style.borderRadius = "12px";
-  track.style.border = "1px solid rgba(255,255,255,0.10)";
-  track.style.background = "rgba(255,255,255,0.05)";
-  track.style.overflow = "hidden";
-  wrap.appendChild(track);
-
-  const ticks = document.createElement("div");
-  ticks.style.position = "absolute";
-  ticks.style.inset = "0";
-  ticks.style.backgroundImage =
-    "repeating-linear-gradient(to top, rgba(255,255,255,0.16) 0px, rgba(255,255,255,0.16) 1px, transparent 1px, transparent 18px)";
-  ticks.style.opacity = "0.55";
-  track.appendChild(ticks);
-
-  const fill = document.createElement("div");
-  fill.style.position = "absolute";
-  fill.style.left = "0";
-  fill.style.right = "0";
-  fill.style.bottom = "0";
-  fill.style.height = "50%";
-  fill.style.background = "linear-gradient(to top, rgba(120,200,255,0.22), rgba(120,200,255,0.03))";
-  track.appendChild(fill);
-
-  const marker = document.createElement("div");
-  marker.style.position = "absolute";
-  marker.style.left = "0";
-  marker.style.right = "0";
-  marker.style.height = "2px";
-  marker.style.background = "rgba(255,90,90,0.95)";
-  marker.style.boxShadow = "0 0 10px rgba(255,90,90,0.42)";
-  marker.style.top = "50%";
-  track.appendChild(marker);
+function makeGauge(title, unit, min, max, color, digits) {
+  const wrap = el("div", "gauge glass");
+  wrap.style.setProperty("--c", color);
+  const value = el("div", "gaugeValue", "—");
+  const track = el("div", "gaugeTrack");
+  const fill = el("div", "gaugeFill");
+  const marker = el("div", "gaugeMarker");
+  track.append(fill, marker);
+  wrap.append(el("div", "gaugeTitle", title), value, el("div", "gaugeUnit", unit), track);
 
   function setValue(val) {
     if (!Number.isFinite(val)) {
-      v.textContent = "—";
-      marker.style.top = "50%";
-      fill.style.height = "50%";
+      value.textContent = "—";
       return;
     }
-    v.textContent = `${val.toFixed(2)}`;
-    const t = (val - min) / (max - min);
-    const cl = t < 0 ? 0 : t > 1 ? 1 : t;
-    marker.style.top = `${(1 - cl) * 100}%`;
-    fill.style.height = `${cl * 100}%`;
+    value.textContent = val.toFixed(digits);
+    const t = Math.min(1, Math.max(0, (val - min) / (max - min)));
+    marker.style.top = `calc(${(1 - t) * 100}% - 1px)`;
+    fill.style.height = `${t * 100}%`;
   }
 
+  setValue(NaN);
   return { el: wrap, setValue };
+}
+
+// The dashboard already shows temperature, pressure and altitude, so the
+// embedded panel shows the board's attitude instead of the gauges.
+let attitudeVals = null;
+
+function ensureAttitudeUI() {
+  if (attitudeVals) return;
+  const chip = el("div", "attitudeChip glass");
+  attitudeVals = {};
+  for (const [key, label] of [["roll", "Roll"], ["pitch", "Pitch"], ["yaw", "Yaw"]]) {
+    const item = el("div", "attitudeItem");
+    attitudeVals[key] = el("span", "attitudeVal", "—");
+    item.append(el("span", "attitudeLabel", label), attitudeVals[key]);
+    chip.appendChild(item);
+  }
+  document.body.appendChild(chip);
 }
 
 function ensureBaroUI() {
   if (baroUI) return;
 
-  const safe = "12px";
-
-  baroUI = document.createElement("div");
-  baroUI.style.position = "fixed";
-  baroUI.style.inset = "0";
-  baroUI.style.zIndex = "9998";
-  baroUI.style.pointerEvents = "none";
+  baroUI = el("div", "gaugeLayer");
+  const leftCol = el("div", "gaugeCol left");
+  const rightCol = el("div", "gaugeCol right");
+  baroUI.append(leftCol, rightCol);
   document.body.appendChild(baroUI);
 
-  const leftCol = document.createElement("div");
-  leftCol.style.position = "absolute";
-  leftCol.style.left = safe;
-  leftCol.style.top = "50%";
-  leftCol.style.transform = "translateY(-50%)";
-  leftCol.style.display = "flex";
-  leftCol.style.flexDirection = "column";
-  leftCol.style.gap = "10px";
-  baroUI.appendChild(leftCol);
-
-  const rightCol = document.createElement("div");
-  rightCol.style.position = "absolute";
-  rightCol.style.right = safe;
-  rightCol.style.top = "50%";
-  rightCol.style.transform = "translateY(-50%)";
-  rightCol.style.display = "flex";
-  rightCol.style.flexDirection = "column";
-  rightCol.style.gap = "10px";
-  baroUI.appendChild(rightCol);
-
-  gTemp = makeGauge("Temp", "°C", -20, 60);
-  gPress = makeGauge("Press", "hPa", 900, 1100);
-  gAlt = makeGauge("Alt", "m", -100, 5000);
+  gTemp = makeGauge("Temp", "°C", -20, 60, "var(--c-temp)", 2);
+  gPress = makeGauge("Press", "hPa", 900, 1100, "var(--c-pressure)", 1);
+  gAlt = makeGauge("Alt", "m", -100, 5000, "var(--c-altitude)", 1);
 
   leftCol.appendChild(gTemp.el);
-  rightCol.appendChild(gPress.el);
-  rightCol.appendChild(gAlt.el);
-
-  if (isEmbed) {
-    gTemp.el.style.width = "56px";
-    gTemp.el.style.height = "210px";
-    gPress.el.style.width = "56px";
-    gPress.el.style.height = "210px";
-    gAlt.el.style.width = "56px";
-    gAlt.el.style.height = "210px";
-  }
-}
-
-function unpackSerde(raw) {
-  if (!raw || !raw.measurement || typeof raw.timestamp !== "number") return null;
-  const keys = Object.keys(raw.measurement);
-  if (keys.length !== 1) return null;
-  const variant = keys[0];
-  const values = raw.measurement[variant];
-
-  if (Array.isArray(values) && values.length === 3 && variant !== "Baro") {
-    return { sensor: variant.toLowerCase(), x: values[0], y: values[1], z: values[2], ts: raw.timestamp };
-  }
-
-  if (variant === "Baro" && Array.isArray(values) && values.length === 3) {
-    return [
-      { sensor: "temp", value: values[0], ts: raw.timestamp },
-      { sensor: "pressure", value: values[1], ts: raw.timestamp },
-      { sensor: "altitude", value: values[2], ts: raw.timestamp },
-    ];
-  }
-
-  return null;
+  rightCol.append(gPress.el, gAlt.el);
 }
 
 function quatToEulerDeg(q) {
@@ -404,6 +320,10 @@ let gyroBiasX = 0,
   gyroBiasY = 0,
   gyroBiasZ = 0;
 let lastAHRSQuat = null;
+// The first reading sets the attitude directly; later ones refine it.
+let fusionInitialised = false;
+// Jump the displayed model to the target once, instead of easing from identity.
+let snapDisplay = false;
 
 const GYRO_DEADBAND_RAD = 0.02;
 const STILL_GYRO_RAD = 0.1;
@@ -426,25 +346,24 @@ function fuseOneStep(stepMs) {
   if (!lastAccel || !lastGyro) return;
 
   const stepSec = stepMs / 1000;
-  ahrs.sampleInterval = stepMs;
 
-  let gx0 = Number(lastGyro.x) * DEG2RAD;
-  let gy0 = Number(lastGyro.y) * DEG2RAD;
-  let gz0 = Number(lastGyro.z) * DEG2RAD;
+  const gx0 = Number(lastGyro.x) * DEG2RAD;
+  const gy0 = Number(lastGyro.y) * DEG2RAD;
+  const gz0 = Number(lastGyro.z) * DEG2RAD;
   if (!Number.isFinite(gx0) || !Number.isFinite(gy0) || !Number.isFinite(gz0)) return;
 
-  let ax0 = Number(lastAccel.x);
-  let ay0 = Number(lastAccel.y);
-  let az0 = Number(lastAccel.z);
+  const ax0 = Number(lastAccel.x);
+  const ay0 = Number(lastAccel.y);
+  const az0 = Number(lastAccel.z);
   if (!Number.isFinite(ax0) || !Number.isFinite(ay0) || !Number.isFinite(az0)) return;
 
-  const gM = remapGyro(gx0, gy0, gz0);
-  const aM = remapAccel(ax0, ay0, az0);
+  const gM = toModelFrame(gx0, gy0, gz0);
+  const aM = toModelFrame(ax0, ay0, az0);
 
   let gx = gM[0],
     gy = gM[1],
     gz = gM[2];
-  let ax = aM[0],
+  const ax = aM[0],
     ay = aM[1],
     az = aM[2];
 
@@ -476,32 +395,28 @@ function fuseOneStep(stepMs) {
     Az /= aLen;
   }
 
+  const mag = lastMag ? toModelFrame(lastMag.x, lastMag.y, lastMag.z) : null;
+
+  if (!fusionInitialised) {
+    const m = mag ?? [];
+    ahrs.initFrom(ax, ay, az, ...m);
+    fusionInitialised = true;
+    snapDisplay = true;
+  }
+
   const trustAccel = accErr < TRUST_ACC_ERR;
   const uiBeta = Number.isFinite(betaUi) ? betaUi : 0.08;
   const effBeta = trustAccel ? uiBeta : uiBeta * 0.12;
   ahrs.beta = effBeta;
 
-  const useMag =
-    !!lastMag && Number.isFinite(lastMag.x) && Number.isFinite(lastMag.y) && Number.isFinite(lastMag.z) && trustAccel;
-
-  if (useMag) {
-    const mx0 = Number(lastMag.x);
-    const my0 = Number(lastMag.y);
-    const mz0 = Number(lastMag.z);
-    if (Number.isFinite(mx0) && Number.isFinite(my0) && Number.isFinite(mz0)) {
-      const mM = remapMag(mx0, my0, mz0);
-      ahrs.update(gx, gy, gz, Ax, Ay, Az, mM[0], mM[1], mM[2]);
-    } else {
-      ahrs.update(gx, gy, gz, Ax, Ay, Az);
-    }
-  } else {
-    ahrs.update(gx, gy, gz, Ax, Ay, Az);
-  }
+  // The magnetometer is only trusted while the accelerometer is (not while shaken).
+  const [mx, my, mz] = mag && trustAccel ? mag : [];
+  ahrs.update(gx, gy, gz, Ax, Ay, Az, mx, my, mz, stepSec);
 
   const q = ahrs.getQuaternion();
   const tq = new THREE.Quaternion(q.x, q.y, q.z, q.w);
   maybeInvertContinuity(tq);
-  qTarget.copy(qOffset).multiply(tq).multiply(qModelAlign);
+  qTarget.copy(qOffset).multiply(tq);
 }
 
 function processFusionTo(tsMs) {
@@ -511,7 +426,13 @@ function processFusionTo(tsMs) {
     return;
   }
   let dt = tsMs - lastFusionMs;
-  if (!Number.isFinite(dt) || dt <= 0) return;
+  if (!Number.isFinite(dt)) return;
+  if (dt < -1000) {
+    // Board rebooted (its µs clock restarted): resync instead of freezing.
+    lastFusionMs = tsMs;
+    return;
+  }
+  if (dt <= 0) return;
 
   dt = Math.min(dt, MAX_CATCHUP_MS);
   lastFusionMs = tsMs;
@@ -523,47 +444,46 @@ function processFusionTo(tsMs) {
   }
 }
 
-let msgWin = 0;
+/** Apply one SingleMeasurement to the latest-value state and advance fusion. */
+function ingest(raw) {
+  for (const u of decodeMeasurement(raw)) {
+    const tsMs = tsToMs(u.t_us);
+
+    if (u.sensor === "accel") {
+      lastAccel = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
+      accelSamples += 1;
+    }
+    if (u.sensor === "gyro") lastGyro = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
+    if (u.sensor === "mag") lastMag = { x: u.x, y: u.y, z: u.z };
+
+    if (u.sensor === "temp") lastTemp = u.value;
+    if (u.sensor === "pressure") lastPressure = u.value;
+    if (u.sensor === "altitude") lastAltitude = u.value;
+
+    if (lastAccel && lastGyro) processFusionTo(Math.max(lastAccel.ts_ms, lastGyro.ts_ms));
+  }
+}
+
+// Accelerometer samples per second, shown in the readout.
+let accelSamples = 0;
 let lastRateMs = performance.now();
 let rateHz = 0;
 
-if (!demo) {
-  es.onopen = () => console.log("SSE connected:", esUrl);
-  es.onerror = () => console.log("SSE error / reconnecting...");
-
+if (!demo && deviceKey) {
+  const es = new EventSource(esUrl);
+  es.onerror = () => {
+    if (hudBadge && !frozen) hudBadge.textContent = "RECONNECTING";
+  };
   es.onmessage = (e) => {
-    msgWin += 1;
-
+    if (hudBadge && !frozen) hudBadge.textContent = "LIVE";
     let parsed;
     try {
       parsed = JSON.parse(e.data);
     } catch {
       return;
     }
-    const items = Array.isArray(parsed) ? parsed : [parsed];
-
-    for (const raw of items) {
-      const u0 = unpackSerde(raw);
-      if (!u0) continue;
-      const list = Array.isArray(u0) ? u0 : [u0];
-
-      for (const u of list) {
-        const tsMs = tsToMs(u.ts);
-
-        if (u.sensor === "accel") lastAccel = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
-        if (u.sensor === "gyro") lastGyro = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
-        if (u.sensor === "mag") lastMag = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
-
-        if (u.sensor === "temp" && Number.isFinite(u.value)) lastTemp = { ts_ms: tsMs, v: u.value };
-        if (u.sensor === "pressure" && Number.isFinite(u.value)) lastPressure = { ts_ms: tsMs, v: u.value };
-        if (u.sensor === "altitude" && Number.isFinite(u.value)) lastAltitude = { ts_ms: tsMs, v: u.value };
-
-        if (lastAccel && lastGyro) processFusionTo(Math.max(lastAccel.ts_ms, lastGyro.ts_ms));
-      }
-    }
+    for (const raw of Array.isArray(parsed) ? parsed : [parsed]) ingest(raw);
   };
-} else {
-  console.log("DEMO mode ON (no SSE)");
 }
 
 function feedDemo() {
@@ -582,37 +502,19 @@ function feedDemo() {
   const mz = 0.4 * Math.sin(t * 0.35);
 
   const temp = 23 + 2 * Math.sin(t * 0.2);
-  const pressPa = 101325 + 120 * Math.sin(t * 0.15);
+  const pressHpa = 1013.25 + 1.2 * Math.sin(t * 0.15);
   const alt = 140 + 3 * Math.sin(t * 0.18);
 
-  const ts = Math.floor(Date.now() * 1000);
+  const ts = Math.floor(performance.now() * 1000); // µs, like a board clock
 
   const fake = [
     { measurement: { Accel: [ax, ay, az] }, timestamp: ts },
     { measurement: { Gyro: [gx, gy, gz] }, timestamp: ts },
     { measurement: { Mag: [mx, my, mz] }, timestamp: ts },
-    { measurement: { Baro: [temp, pressPa, alt] }, timestamp: ts },
+    { measurement: { Baro: [temp, pressHpa, alt] }, timestamp: ts },
   ];
 
-  for (const raw of fake) {
-    const u0 = unpackSerde(raw);
-    if (!u0) continue;
-    const list = Array.isArray(u0) ? u0 : [u0];
-
-    for (const u of list) {
-      const tsMs = tsToMs(u.ts);
-
-      if (u.sensor === "accel") lastAccel = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
-      if (u.sensor === "gyro") lastGyro = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
-      if (u.sensor === "mag") lastMag = { ts_ms: tsMs, x: u.x, y: u.y, z: u.z };
-
-      if (u.sensor === "temp" && Number.isFinite(u.value)) lastTemp = { ts_ms: tsMs, v: u.value };
-      if (u.sensor === "pressure" && Number.isFinite(u.value)) lastPressure = { ts_ms: tsMs, v: u.value };
-      if (u.sensor === "altitude" && Number.isFinite(u.value)) lastAltitude = { ts_ms: tsMs, v: u.value };
-
-      if (lastAccel && lastGyro) processFusionTo(Math.max(lastAccel.ts_ms, lastGyro.ts_ms));
-    }
-  }
+  for (const raw of fake) ingest(raw);
 }
 
 const modelWorldPos = new THREE.Vector3();
@@ -620,29 +522,42 @@ const worldDown = new THREE.Vector3(0, -1, 0);
 
 let lastRenderMs = performance.now();
 
+// The embedded view is a small panel; 30 fps is plenty and halves GPU/CPU cost.
+const EMBED_FRAME_MS = 1000 / 30;
+let lastDrawMs = 0;
+
 function animate() {
   requestAnimationFrame(animate);
 
-  if (demo) {
-    msgWin += 1;
-    feedDemo();
-  }
+  // The dashboard sets kiwiPaused while a panel is dragged or resized.
+  if (window.kiwiPaused) return;
+  if (isEmbed && performance.now() - lastDrawMs < EMBED_FRAME_MS) return;
+  lastDrawMs = performance.now();
+
+  if (demo) feedDemo();
 
   const now = performance.now();
   const elapsedRate = now - lastRateMs;
-  if (elapsedRate >= 800) {
-    rateHz = (msgWin * 1000) / elapsedRate;
-    msgWin = 0;
+  if (elapsedRate >= 1000) {
+    rateHz = (accelSamples * 1000) / elapsedRate;
+    accelSamples = 0;
     lastRateMs = now;
   }
 
-  const dtRender = Math.max(0.001, Math.min(0.05, (now - lastRenderMs) / 1000));
+  // Real elapsed time (capped only for tab switches), so the model eases at the
+  // same speed whatever the frame rate.
+  const dtRender = Math.max(0.001, Math.min(0.5, (now - lastRenderMs) / 1000));
   lastRenderMs = now;
 
   if (model) {
     const tau = 0.07;
     const k = 1 - Math.exp(-dtRender / tau);
-    qDisplay.slerp(qTarget, k);
+    if (snapDisplay) {
+      qDisplay.copy(qTarget);
+      snapDisplay = false;
+    } else if (!frozen) {
+      qDisplay.slerp(qTarget, k);
+    }
     model.quaternion.copy(qDisplay);
 
     model.getWorldPosition(modelWorldPos);
@@ -650,43 +565,49 @@ function animate() {
     gravityArrow.setDirection(worldDown);
   }
 
-  ensureBaroUI();
-  if (now - lastGaugeUpdateMs >= 120) {
-    gTemp.setValue(lastTemp ? lastTemp.v : NaN);
-
-    const pRaw = lastPressure ? lastPressure.v : NaN;
-    gPress.setValue(pRaw);
-
-    gAlt.setValue(lastAltitude ? lastAltitude.v : NaN);
-
-    lastGaugeUpdateMs = now;
+  if (isEmbed) {
+    ensureAttitudeUI();
+    if (model && now - lastGaugeUpdateMs >= 120) {
+      const e = quatToEulerDeg(model.quaternion);
+      attitudeVals.roll.textContent = `${e.roll.toFixed(1)}°`;
+      attitudeVals.pitch.textContent = `${e.pitch.toFixed(1)}°`;
+      attitudeVals.yaw.textContent = `${e.yaw.toFixed(1)}°`;
+      lastGaugeUpdateMs = now;
+    }
+  } else {
+    ensureBaroUI();
+    if (now - lastGaugeUpdateMs >= 120) {
+      gTemp.setValue(lastTemp);
+      gPress.setValue(lastPressure);
+      gAlt.setValue(lastAltitude);
+      lastGaugeUpdateMs = now;
+    }
   }
 
   if (hud) {
-    const modeText = demo ? "DEMO" : `SSE ${deviceKey}`;
-    const a = lastAccel ? `${lastAccel.x.toFixed(3)},${lastAccel.y.toFixed(3)},${lastAccel.z.toFixed(3)}` : "-";
-    const g = lastGyro ? `${lastGyro.x.toFixed(3)},${lastGyro.y.toFixed(3)},${lastGyro.z.toFixed(3)}` : "-";
-    const m = lastMag ? `${lastMag.x.toFixed(3)},${lastMag.y.toFixed(3)},${lastMag.z.toFixed(3)}` : "-";
-
-    let eulerText = "-";
+    const fmt = (v, d) => (v ? `${v.x.toFixed(d)}  ${v.y.toFixed(d)}  ${v.z.toFixed(d)}` : "—");
+    hudVals.accel.textContent = fmt(lastAccel, 3);
+    hudVals.gyro.textContent = fmt(lastGyro, 2);
+    hudVals.mag.textContent = fmt(lastMag, 1);
     if (model) {
       const e = quatToEulerDeg(model.quaternion);
-      eulerText = `r:${e.roll.toFixed(1)} p:${e.pitch.toFixed(1)} y:${e.yaw.toFixed(1)}`;
+      hudVals.euler.textContent = `${e.roll.toFixed(1)}°  ${e.pitch.toFixed(1)}°  ${e.yaw.toFixed(1)}°`;
     }
-
-    hud.textContent =
-      `${modeText}  ${(rateHz || 0).toFixed(1)} Hz  beta ${Number.isFinite(betaUi) ? betaUi.toFixed(2) : "0.08"}  ${
-        frozen ? "FROZEN" : "LIVE"
-      }\n` +
-      `accel: ${a}\n` +
-      `gyro:  ${g}\n` +
-      `mag:   ${m}\n` +
-      `euler: ${eulerText}`;
+    hudVals.rate.textContent = `${rateHz.toFixed(1)} Hz${demo ? " (demo)" : ""}`;
   }
 
   controls.update();
   renderer.render(scene, camera);
 }
+
+// Read-only state for automated tests and debugging in the browser console.
+window.kiwi3d = Object.freeze({
+  fusionQuaternion: () => ahrs.getQuaternion(),
+  modelQuaternion: () => (model ? model.quaternion.toArray() : null),
+  beta: () => ahrs.beta,
+  latest: () => ({ accel: lastAccel, gyro: lastGyro, mag: lastMag, temp: lastTemp, pressure: lastPressure, altitude: lastAltitude }),
+});
+
 animate();
 
 function onResize() {
@@ -696,6 +617,7 @@ function onResize() {
   camera.updateProjectionMatrix();
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(w, h, false);
+  frameModel();
 }
 window.addEventListener("resize", onResize, { passive: true });
 onResize();

@@ -3,68 +3,74 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kiwi - Devices</title>
+  <title>Kiwi · Devices</title>
+  <script>
+    // Apply the saved theme before first paint so there is no flash.
+    try {
+      const root = document.documentElement;
+      root.classList.add(localStorage.getItem('theme') === 'light' ? 'light' : 'dark');
+      if (window.top !== window.self) root.classList.add('inTab');
+    } catch (_) {}
+  </script>
+  <link rel="stylesheet" href="/theme.css" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
-<body>
+<body class="dark">
   <div id="tabBar" class="tabBar">
+    <a class="brand" href="/" title="Kiwi">
+      <span class="brandMark">K</span>
+      <span class="brandName">Kiwi</span>
+    </a>
     <div class="tab active" data-tab="devices">Devices</div>
   </div>
 
   <div id="contentArea" class="contentArea">
     <div id="devicesView">
-      <header>
-        <h1 id="boardName">Kiwi Sensor Dashboard</h1>
-        <p>Landing page · Devices appear automatically when UDP data arrives</p>
-      </header>
+      <main class="page">
+        <div class="pageHead">
+          <div>
+            <h1 class="pageTitle" id="boardName">Devices</h1>
+            <p class="pageSub">Boards appear here as soon as their sensor packets arrive.</p>
+          </div>
+          <div class="appBarActions">
+            <span class="statusChip" id="connPill" data-state="warn">
+              <span class="dot" id="connDot"></span>
+              <span id="connText">connecting…</span>
+            </span>
+            <select id="themeSelect" aria-label="Theme">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </div>
+        </div>
 
-      <main class="wrapSingle">
-        <section class="card">
-          <div class="row space">
-            <div class="row">
-              <span class="pill" id="connPill">
-                <span class="dot" id="connDot"></span>
-                <span id="connText">connecting…</span>
-              </span>
-              <span class="pill">devices: <span id="deviceCount">0</span></span>
-            </div>
-
-            <div class="row">
-              <label class="inlineLabel">
-                Theme
-                <select id="themeSelect">
-                  <option value="dark">Dark</option>
-                  <option value="light">Light</option>
-                </select>
-              </label>
-            </div>
+        <section class="card devicesCard">
+          <div class="toolbar">
+            <input id="deviceSearch" type="search" placeholder="Filter by IP address" aria-label="Filter devices" />
+            <span class="countChip"><span class="mono" id="deviceCount">0</span> online</span>
+            <span class="appBarSpacer"></span>
+            <button id="refreshBtn" type="button" class="btnGhost">Refresh</button>
           </div>
 
-          <details class="menu" id="deviceMenu" open>
-            <summary>Devices</summary>
-            <div class="menuBody">
-              <div class="menuActions">
-                <input id="deviceSearch" type="search" placeholder="Search device port…" aria-label="Search devices" />
-                <button id="refreshBtn" type="button">Refresh</button>
-              </div>
+          <table class="deviceTable">
+            <thead>
+              <tr>
+                <th>Board</th>
+                <th>Packet rate</th>
+                <th>Open</th>
+              </tr>
+            </thead>
+            <tbody id="deviceList"></tbody>
+          </table>
 
-              <table class="deviceTable">
-                <thead>
-                  <tr>
-                    <th>Device Name</th>
-                    <th>Packet Rate</th>
-                    <th>Open 3D</th>
-                    <th>Open Dashboard</th>
-                  </tr>
-                </thead>
-                <tbody id="deviceList"></tbody>
-              </table>
-
-              <p class="small" style="margin-top:12px;">
-                Click a device to open its live dashboard in this window.
-              </p>
-            </div>
-          </details>
+          <div class="emptyState" id="emptyState">
+            <div class="emptyIcon"></div>
+            <div class="emptyTitle">Waiting for boards</div>
+            <p class="emptyText">
+              Power on a Kiwi board on this network, or start the simulator with
+              <code>cargo run -p udp-dummy-server</code>. Packets on UDP port 8099 show up here automatically.
+            </p>
+          </div>
         </section>
       </main>
     </div>

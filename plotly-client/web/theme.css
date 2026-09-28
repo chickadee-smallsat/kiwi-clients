@@ -1,0 +1,168 @@
+/* Kiwi design foundation: fonts, colour tokens and the page background.
+   Shared by the device list, the dashboard and the 3D view. */
+
+@font-face {
+  font-family: "Inter";
+  src: url("/vendor/fonts/inter-latin-wght.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/vendor/fonts/jetbrains-mono-latin-wght.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Canvas: deep ink blended with indigo, teal and a warm amber horizon. */
+  --bg: #060913;
+  --bg-blend:
+    radial-gradient(1100px 680px at -8% -18%, rgba(99, 102, 241, 0.22), transparent 62%),
+    radial-gradient(900px 620px at 108% -12%, rgba(20, 184, 166, 0.16), transparent 60%),
+    radial-gradient(1200px 720px at 50% 118%, rgba(245, 158, 11, 0.11), transparent 62%),
+    linear-gradient(180deg, #0b1122 0%, #060913 100%);
+
+  /* Surfaces are translucent so the blend glows through. */
+  --surface: rgba(15, 21, 36, 0.70);
+  --surface-strong: rgba(13, 18, 32, 0.92);
+  --surface-solid: #0f1526;
+  --surface-raised: rgba(30, 41, 64, 0.55);
+  --surface-hover: rgba(148, 163, 184, 0.08);
+  --surface-press: rgba(148, 163, 184, 0.14);
+
+  --hairline: rgba(148, 163, 184, 0.14);
+  --hairline-strong: rgba(148, 163, 184, 0.28);
+  --edge-light: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --shadow: 0 1px 2px rgba(2, 6, 23, 0.40), 0 14px 36px rgba(2, 6, 23, 0.45);
+  --shadow-pop: 0 24px 60px rgba(2, 6, 23, 0.60);
+  --blur: saturate(150%) blur(16px);
+
+  --text: #e7ebf3;
+  --text-2: #a3aec3;
+  --text-3: #6d7891;
+
+  /* One brand accent (amber, matching the X trace) plus status colours. */
+  --accent: #f59e0b;
+  --accent-strong: #fbbf24;
+  --accent-soft: rgba(245, 158, 11, 0.14);
+  --accent-line: rgba(245, 158, 11, 0.45);
+  --on-accent: #1c1204;
+
+  --ok: #10b981;
+  --ok-soft: rgba(16, 185, 129, 0.14);
+  --warn: #f97316;
+  --warn-soft: rgba(249, 115, 22, 0.14);
+  --bad: #f43f5e;
+  --bad-soft: rgba(244, 63, 94, 0.14);
+
+  /* Sensor identity colours (the plot palette). */
+  --c-accel: #f59e0b;
+  --c-gyro: #10b981;
+  --c-mag: #60a5fa;
+  --c-temp: #f87171;
+  --c-pressure: #a78bfa;
+  --c-altitude: #34d399;
+
+  /* Plot chrome, read by plot.js. */
+  --plot-text: #a3aec3;
+  --plot-grid: rgba(148, 163, 184, 0.10);
+  --plot-hover-bg: rgba(10, 14, 26, 0.94);
+
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px rgba(245, 158, 11, 0.65);
+}
+
+html.light,
+body.light {
+  color-scheme: light;
+
+  --bg: #eef2f8;
+  --bg-blend:
+    radial-gradient(1100px 680px at -8% -18%, rgba(99, 102, 241, 0.14), transparent 62%),
+    radial-gradient(900px 620px at 108% -12%, rgba(20, 184, 166, 0.12), transparent 60%),
+    radial-gradient(1200px 720px at 50% 118%, rgba(245, 158, 11, 0.10), transparent 62%),
+    linear-gradient(180deg, #f8fafd 0%, #eef2f8 100%);
+
+  --surface: rgba(255, 255, 255, 0.74);
+  --surface-strong: rgba(255, 255, 255, 0.96);
+  --surface-solid: #ffffff;
+  --surface-raised: rgba(241, 245, 251, 0.85);
+  --surface-hover: rgba(15, 23, 42, 0.05);
+  --surface-press: rgba(15, 23, 42, 0.09);
+
+  --hairline: rgba(15, 23, 42, 0.09);
+  --hairline-strong: rgba(15, 23, 42, 0.18);
+  --edge-light: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 12px 32px rgba(15, 23, 42, 0.08);
+  --shadow-pop: 0 24px 60px rgba(15, 23, 42, 0.18);
+
+  --text: #0f172a;
+  --text-2: #475569;
+  --text-3: #7c8799;
+
+  --accent: #d97706;
+  --accent-strong: #f59e0b;
+  --accent-soft: rgba(217, 119, 6, 0.12);
+  --accent-line: rgba(217, 119, 6, 0.45);
+  --on-accent: #1c1204;
+
+  --ok: #059669;
+  --ok-soft: rgba(5, 150, 105, 0.12);
+  --warn: #ea580c;
+  --warn-soft: rgba(234, 88, 12, 0.12);
+  --bad: #e11d48;
+  --bad-soft: rgba(225, 29, 72, 0.10);
+
+  --plot-text: #475569;
+  --plot-grid: rgba(15, 23, 42, 0.08);
+  --plot-hover-bg: rgba(255, 255, 255, 0.97);
+
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px rgba(217, 119, 6, 0.55);
+}
+
+/* The theme class is set on <html> before first paint (inline script in each
+   page) and mirrored on <body>. Painting the background on the root means it
+   covers the whole canvas, however tall the content is. */
+html {
+  background-color: var(--bg);
+  background-image: var(--bg-blend);
+  background-attachment: fixed;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: transparent;
+  color: var(--text);
+  font: 14px/1.45 var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.mono,
+kbd,
+code {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+::selection {
+  background: var(--accent-soft);
+}

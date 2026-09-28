@@ -1,16 +1,16 @@
+// Per-device live dashboard. Loaded as an ES module by dashboard.html.
+import { isVectorSensor, tiltDeg } from './kiwi-protocol.js';
+import { Recorder, buildSheets, exportFilename } from './recorder.js';
+
 (() => {
   const connPill = document.getElementById('connPill');
-  const connDot = document.getElementById('connDot');
   const connText = document.getElementById('connText');
   const reconnectsEl = document.getElementById('reconnects');
   const lastSeenEl = document.getElementById('lastSeen');
-  const bufCountEl = document.getElementById('bufCount');
-  const bufMaxEl = document.getElementById('bufMax');
+  const windowPointsEl = document.getElementById('windowPoints');
 
   const pauseBtn = document.getElementById('pauseBtn');
   const windowInput = document.getElementById('windowSec');
-  const rateInput = document.getElementById('rateHz');
-  const streamSelect = document.getElementById('streamSelect');
 
   const themeSelect = document.getElementById('themeSelect');
   const paletteSelect = document.getElementById('paletteSelect');
@@ -60,8 +60,13 @@
   const horizonPitchEl = document.getElementById('horizonPitch');
 
   const params = new URLSearchParams(location.search);
-  const deviceKey = params.get('src') || 'all';
-  const deviceId = deviceKey === 'all' ? null : deviceKey;
+  const deviceId = params.get('src');
+  // A dashboard always shows one device; without one, go pick it on the landing page.
+  if (!deviceId) {
+    location.replace('/');
+    return;
+  }
+  const deviceKey = deviceId;
   const board = params.get('board');
 
   let paused = false;
@@ -69,18 +74,11 @@
   let lastSeenMs = null;
 
   let windowSec = toInt(windowInput?.value, 2);
-  let rateHz = toInt(rateInput?.value, 60);
-  let maxPoints = Math.max(1, Math.round(windowSec * rateHz));
-  let bufferedPoints = 0;
 
-  const recorder = {
-    isRecording: false,
-    startedAt: null,
-    rows: [],
-  };
+  const recorder = new Recorder();
 
-  let uiStream = streamSelect ? streamSelect.value : 'all';
-  let uiStreams = new Set();
+  let selectedStreams = new Set();
+  let latestAccel = null; // newest accelerometer sample, for the attitude indicator
 
   const FRAME_MS = 33;
   const RESYNC_MS = 1000;
@@ -93,7 +91,7 @@
   // track latest timestamp per chart so deferred relayout uses correct range
   const relayoutLatest = { accel: null, gyro: null, mag: null, temp: null, pressure: null, altitude: null };
 
-  const PANEL_STATE_KEY    = `kiwi.dashboard.gridstack.v9.${deviceKey}`;
+  const PANEL_STATE_KEY    = `kiwi.dashboard.gridstack.v10.${deviceKey}`;
   const LIVE_VALUES_KEY    = `kiwi.dashboard.liveValues.${deviceKey}`;
   const WIDGET_HORIZON_KEY = `kiwi.widget.horizon.${deviceKey}`;
   const LAYOUT_KEY         = `kiwi.layout.${deviceKey}`;
@@ -135,32 +133,27 @@
     ],
   };
 
-  const GRID_COLS = () => {
-    if (!dashboardGrid) return 12;
-    const cols = getComputedStyle(dashboardGrid).gridTemplateColumns.split(' ').length;
-    return Math.max(1, cols);
-  };
+  const plotDivs = { accel: accelDiv, gyro: gyroDiv, mag: magDiv, temp: tempDiv, pressure: pressureDiv, altitude: altitudeDiv };
+  const PLOTTED = Object.keys(plotDivs);
+  // Series per plot: vectors draw x, y, z and |R|; scalars one value.
+  const seriesOf = (sensor) => (isVectorSensor(sensor) ? ['x', 'y', 'z', 'mag'] : ['value']);
+  const traceIndices = (keys) => keys.map((_, i) => i);
 
-  const draw = {
-    accel: { ts: [], x: [], y: [], z: [], mag: [], theta: [] },
-    gyro: { ts: [], x: [], y: [], z: [], mag: [] },
-    mag: { ts: [], x: [], y: [], z: [], mag: [], theta: [], phi: [] },
-    temp: { ts: [], v: [] },
-    pressure: { ts: [], v: [] },
-    altitude: { ts: [], v: [] },
-  };
+  function emptyBuffers() {
+    return Object.fromEntries(
+      PLOTTED.map((s) => [s, { ts: [], ...Object.fromEntries(seriesOf(s).map((k) => [k, []])) }]),
+    );
+  }
 
-  const store = {
-    accel: { ts: [], x: [], y: [], z: [], mag: [] },
-    gyro: { ts: [], x: [], y: [], z: [], mag: [] },
-    mag: { ts: [], x: [], y: [], z: [], mag: [] },
-    temp: { ts: [], v: [] },
-    pressure: { ts: [], v: [] },
-    altitude: { ts: [], v: [] },
-  };
+  function clearBuffer(buf) {
+    for (const arr of Object.values(buf)) arr.length = 0;
+  }
+
+  // store: recent history per plot (for resync); draw: points not yet sent to Plotly.
+  const store = emptyBuffers();
+  const draw = emptyBuffers();
 
   const dialStats = document.getElementById('dialStats');
-  if (dialStats) dialStats.open = true;
 
   function toInt(v, fallback) {
     const n = Number(v);
@@ -168,35 +161,19 @@
   }
 
   function getCss(varName) {
-    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    return getComputedStyle(document.body).getPropertyValue(varName).trim();
+  }
+
+  // Status text while data flows; keeps the last board restart visible.
+  let restartNote = '';
+  function connectedText() {
+    return `Live${restartNote}`;
   }
 
   function setConn(state, text) {
-    if (!connText || !connDot || !connPill) return;
-
+    if (!connText || !connPill) return;
     connText.textContent = text;
-
-    const ok = getCss('--ok');
-    const warn = getCss('--warn');
-    const bad = getCss('--bad');
-
-    if (state === 'ok') {
-      connDot.style.background = ok;
-      connPill.style.borderColor = ok;
-      connText.style.color = '#bfffe2';
-      return;
-    }
-
-    if (state === 'warn') {
-      connDot.style.background = warn;
-      connPill.style.borderColor = warn;
-      connText.style.color = '#ffe6a8';
-      return;
-    }
-
-    connDot.style.background = bad;
-    connPill.style.borderColor = bad;
-    connText.style.color = '#ffb8c0';
+    connPill.dataset.state = state;
   }
 
   function fmtTime(ms) {
@@ -212,40 +189,18 @@
   setInterval(() => {
     if (!lastSeenMs) return;
     const age = Date.now() - lastSeenMs;
-    if (age > 2000) setConn('warn', `connected (${deviceKey}) (stale…)`);
+    if (age > 2000) setConn('warn', `No data for ${Math.round(age / 1000)} s`);
   }, 500);
-
-  function isVectorSensor(s) {
-    return s === 'accel' || s === 'gyro' || s === 'mag';
-  }
 
   function applySettings() {
     windowSec = Math.max(1, Math.min(10, toInt(windowInput?.value, 2)));
-    rateHz = Math.max(1, Math.min(240, toInt(rateInput?.value, 60)));
-
     if (windowInput) windowInput.value = String(windowSec);
-    if (rateInput) rateInput.value = String(rateHz);
-
-    maxPoints = Math.max(1, Math.round(windowSec * rateHz));
-
-    if (bufMaxEl) bufMaxEl.textContent = String(maxPoints);
   }
 
-  function getSelectedStreams() {
-    const set = new Set();
-
-    if (!streamSelect) return set;
-
-    for (const opt of Array.from(streamSelect.selectedOptions || [])) {
-      if (opt && opt.value) set.add(opt.value);
-    }
-
-    return set;
-  }
-
-  function shouldDraw(sensor) {
-    if (uiStreams.size) return uiStreams.has(sensor);
-    return uiStream === 'all' || uiStream === sensor;
+  function readSelectedStreams() {
+    if (!streamChecksEl) return new Set();
+    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
+    return new Set(checks.filter((c) => c.checked).map((c) => c.value));
   }
 
   function plotVisible(div) {
@@ -272,50 +227,32 @@
     else streamHintEl.textContent = `${selected} selected`;
   }
 
-  function applyLiveValuesVisibility() {
-    const visible = !!liveValuesToggle?.checked;
-
-    if (panelValues) {
-      if (visible) {
-        panelValues.style.display = '';
-        // Re-register with GridStack so it gets a real cell, not a ghost.
-        if (grid && panelValues.classList.contains('grid-stack-item')) {
-          try { grid.makeWidget(panelValues); } catch (_) {}
-        }
-      } else {
-        // Detach from layout (without removing DOM node) so the gap closes.
-        if (grid && panelValues.classList.contains('grid-stack-item')) {
-          try { grid.removeWidget(panelValues, false); } catch (_) {}
-        }
-        panelValues.style.display = 'none';
-      }
+  // A hidden panel must also leave GridStack (keeping its DOM node), otherwise
+  // it still reserves its rows and leaves an empty band below the dashboard.
+  function setPanelShown(panel, shown) {
+    if (!panel) return;
+    if (shown) {
+      panel.style.display = '';
+      if (grid && !panel.gridstackNode) grid.makeWidget(panel);
+    } else {
+      if (grid && panel.gridstackNode) grid.removeWidget(panel, false);
+      panel.style.display = 'none';
     }
+  }
 
-    localStorage.setItem(LIVE_VALUES_KEY, visible ? '1' : '0');
-    schedulePlotResize();
+  function applyLiveValuesVisibility() {
+    applyWidgetVis(panelValues, liveValuesToggle, LIVE_VALUES_KEY);
   }
 
   function applyWidgetVis(panelEl, toggle, storageKey) {
     const visible = !!toggle?.checked;
-    if (panelEl) {
-      if (visible) {
-        panelEl.style.display = '';
-        if (grid && panelEl.classList.contains('grid-stack-item')) {
-          try { grid.makeWidget(panelEl); } catch (_) {}
-        }
-      } else {
-        if (grid && panelEl.classList.contains('grid-stack-item')) {
-          try { grid.removeWidget(panelEl, false); } catch (_) {}
-        }
-        panelEl.style.display = 'none';
-      }
-    }
+    setPanelShown(panelEl, visible);
     localStorage.setItem(storageKey, visible ? '1' : '0');
     schedulePlotResize();
   }
 
   function applyStreamVisibility() {
-    const selected = uiStreams;
+    const selected = selectedStreams;
 
     if (!plotDetailsEls.length) {
       applyStreamHint();
@@ -327,7 +264,7 @@
       const panel = d.closest('.dashboardPanel');
 
       if (panel) {
-        panel.style.display = selected.size === 0 ? 'none' : (selected.has(s) ? 'flex' : 'none');
+        setPanelShown(panel, selected.has(s));
       } else {
         d.style.display = selected.size === 0 ? 'none' : (selected.has(s) ? '' : 'none');
       }
@@ -338,85 +275,57 @@
     schedulePlotResize();
   }
 
-  function syncSelectFromChecks() {
-    if (!streamSelect || !streamChecksEl) return;
-
-    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
-    const selected = new Set(checks.filter(c => c.checked).map(c => c.value));
-
-    Array.from(streamSelect.options).forEach(opt => {
-      opt.selected = selected.has(opt.value);
-    });
-  }
-
-  function syncChecksFromSelect() {
-    if (!streamSelect || !streamChecksEl) return;
-
-    const selected = new Set(Array.from(streamSelect.selectedOptions || []).map(o => o.value));
-    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
-
-    checks.forEach(c => {
-      c.checked = selected.has(c.value);
-    });
-  }
-
   function setAllStreams(v) {
     if (!streamChecksEl) return;
-
-    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
-
-    checks.forEach(c => {
-      c.checked = v;
-    });
-
-    syncSelectFromChecks();
-    uiStreams = getSelectedStreams();
-    uiStream = streamSelect ? streamSelect.value : 'all';
+    for (const c of streamChecksEl.querySelectorAll('input[type="checkbox"]')) c.checked = v;
+    selectedStreams = readSelectedStreams();
     applyStreamVisibility();
   }
 
-  const THEMES = {
-    dark: {
-      paper_bgcolor: 'rgba(0,0,0,0)',
-      plot_bgcolor: 'rgba(0,0,0,0)',
-      font: { color: '#f5f0e8' },
-      xaxis: { gridcolor: 'rgba(251,191,36,.10)' },
-      yaxis: { gridcolor: 'rgba(251,191,36,.10)' },
-    },
-    light: {
-      paper_bgcolor: '#fffdf7',
-      plot_bgcolor: '#fffdf7',
-      font: { color: '#1a1208' },
-      xaxis: { gridcolor: 'rgba(120,80,10,.12)' },
-      yaxis: { gridcolor: 'rgba(120,80,10,.12)' },
-    },
-  };
+  // Plot chrome is read from the CSS theme tokens so plots always match the page.
+  function plotTheme() {
+    return {
+      text: getCss('--plot-text'),
+      grid: getCss('--plot-grid'),
+      hoverBg: getCss('--plot-hover-bg'),
+      hoverText: getCss('--text'),
+      accentLine: getCss('--accent-line'),
+    };
+  }
 
   const PALETTES = {
     default: ['#f59e0b', '#10b981', '#60a5fa', '#f87171', '#a78bfa', '#34d399'],
     colorblind: ['#0072B2', '#E69F00', '#009E73', '#D55E00', '#CC79A7', '#56B4E9'],
   };
 
+  let horizonColors = null; // attitude-indicator colours, rebuilt on theme change
+
   function applyTheme(theme) {
-    document.body.classList.toggle('light', theme === 'light');
-    document.body.classList.toggle('dark', theme !== 'light');
+    for (const el of [document.documentElement, document.body]) {
+      el.classList.toggle('light', theme === 'light');
+      el.classList.toggle('dark', theme !== 'light');
+    }
+    horizonColors = null;
   }
 
-  function applyThemeToPlots(theme) {
-    const t = THEMES[theme] || THEMES.dark;
+  function applyThemeToPlots() {
+    const t = plotTheme();
     const divs = [accelDiv, gyroDiv, magDiv, tempDiv, pressureDiv, altitudeDiv];
 
     for (const div of divs) {
       if (!div) continue;
 
-      // Use keyed paths instead of whole-axis objects so that per-chart
-      // axis settings (title, spikes, hover, etc.) are not overwritten.
+      // Keyed paths keep per-chart axis settings (title, spikes) intact.
       Plotly.relayout(div, {
-        paper_bgcolor: t.paper_bgcolor,
-        plot_bgcolor: t.plot_bgcolor,
-        font: t.font,
-        'xaxis.gridcolor': (t.xaxis || {}).gridcolor,
-        'yaxis.gridcolor': (t.yaxis || {}).gridcolor,
+        'font.color': t.text,
+        'xaxis.gridcolor': t.grid,
+        'yaxis.gridcolor': t.grid,
+        'xaxis.linecolor': t.grid,
+        'yaxis.linecolor': t.grid,
+        'hoverlabel.bgcolor': t.hoverBg,
+        'hoverlabel.bordercolor': t.accentLine,
+        'hoverlabel.font.color': t.hoverText,
+        'xaxis.spikecolor': t.accentLine,
       });
     }
   }
@@ -457,13 +366,13 @@
     if (paletteSelect) paletteSelect.value = savedPalette;
 
     applyTheme(savedTheme);
-    applyThemeToPlots(savedTheme);
+    applyThemeToPlots();
     applyPaletteToPlots(savedPalette);
   }
 
   const baseLayout = {
     dragmode: false,
-    margin: { l: 56, r: 10, t: 12, b: 38 },
+    margin: { l: 58, r: 12, t: 8, b: 40 },
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
     // hovermode is intentionally NOT set here — it is controlled at runtime
@@ -474,27 +383,31 @@
       title: { text: 'Time (s)', standoff: 6 },
       showgrid: true,
       zeroline: false,
-      tickfont: { size: 12 },
-      titlefont: { size: 13 },
+      tickfont: { size: 11, family: 'JetBrains Mono, ui-monospace, monospace' },
+      titlefont: { size: 12 },
       showspikes: false,   // enabled by the crosshair toggle
     },
     yaxis: {
       title: { text: '', standoff: 4 },
       showgrid: true,
       zeroline: false,
-      tickfont: { size: 12 },
-      titlefont: { size: 13 },
+      tickfont: { size: 11, family: 'JetBrains Mono, ui-monospace, monospace' },
+      titlefont: { size: 12 },
       showspikes: false,
     },
     showlegend: true,
+    // Legend sits above the plot area, right-aligned, clear of the x-axis title.
     legend: {
       orientation: 'h',
       font: { size: 12 },
       bgcolor: 'rgba(0,0,0,0)',
-      xanchor: 'left',
-      x: 0,
+      xanchor: 'right',
+      x: 1,
+      yanchor: 'bottom',
+      y: 1,
     },
-    font: { size: 13 },
+    font: { size: 12, family: 'Inter, system-ui, sans-serif' },
+    hoverlabel: { font: { family: 'JetBrains Mono, ui-monospace, monospace', size: 12 } },
   };
 
   // ── Crosshair hover toggle ─────────────────────────────────────────────────
@@ -507,16 +420,16 @@
     const on = {
       hovermode: 'x unified',
       hoverlabel: {
-        bgcolor: 'rgba(9,13,20,.92)',
-        bordercolor: 'rgba(245,158,11,.45)',
-        font: { color: '#f5f0e8', size: 12, family: 'ui-monospace,monospace' },
+        bgcolor: plotTheme().hoverBg,
+        bordercolor: plotTheme().accentLine,
+        font: { color: plotTheme().hoverText, size: 12, family: 'JetBrains Mono, ui-monospace, monospace' },
         namelength: -1,
       },
       'xaxis.showspikes':      true,
       'xaxis.spikemode':       'across+toaxis',
       'xaxis.spikesnap':       'cursor',
       'xaxis.spikedash':       'solid',
-      'xaxis.spikecolor':      'rgba(245,158,11,.45)',
+      'xaxis.spikecolor':      plotTheme().accentLine,
       'xaxis.spikethickness':  1,
     };
 
@@ -550,6 +463,7 @@
 
     const layout = structuredClone(baseLayout);
     layout.yaxis.title = title;
+    layout.margin = { ...layout.margin, t: 28 }; // room for the legend
 
     Plotly.newPlot(div, traces, layout, config);
   }
@@ -561,6 +475,7 @@
 
     const layout = structuredClone(baseLayout);
     layout.yaxis.title = title;
+    layout.showlegend = false; // one trace: the panel title already names it
 
     Plotly.newPlot(div, traces, layout, config);
   }
@@ -648,36 +563,6 @@
     localStorage.setItem(PANEL_STATE_KEY, JSON.stringify(state));
   }
 
-  function clampCols(panel, cols) {
-    const maxGridCols = GRID_COLS();
-    const min = Math.max(1, Number(panel.dataset.minCols || 1));
-    const max = Math.min(maxGridCols, Number(panel.dataset.maxCols || maxGridCols));
-
-    return Math.max(min, Math.min(max, cols));
-  }
-
-  function applyPanelSize(panel, cols, height) {
-    const nextCols = clampCols(panel, cols);
-    const nextHeight = Math.max(240, Math.round(height));
-
-    panel.dataset.cols = String(nextCols);
-    panel.dataset.height = String(nextHeight);
-    panel.style.setProperty('--col-span', String(nextCols));
-    panel.style.setProperty('--panel-height', `${nextHeight}px`);
-  }
-
-  function getGridMetrics() {
-    if (!dashboardGrid) return { cols: 12, colWidth: 80, gap: 12 };
-
-    const styles = getComputedStyle(dashboardGrid);
-    const cols = GRID_COLS();
-    const gap = parseFloat(styles.columnGap || styles.gap || '12') || 12;
-    const totalGap = gap * (cols - 1);
-    const colWidth = (dashboardGrid.clientWidth - totalGap) / cols;
-
-    return { cols, colWidth, gap };
-  }
-
   function buildPanelChrome(panel) {
     if (panel.classList.contains('gridStackReady')) return;
 
@@ -690,6 +575,8 @@
     panel.classList.add('grid-stack-item', 'gridStackReady');
     panel.setAttribute('gs-w', String(savedPanel.w || defaultW));
     panel.setAttribute('gs-h', String(savedPanel.h || defaultH));
+    if (panel.dataset.minCols) panel.setAttribute('gs-min-w', panel.dataset.minCols);
+    if (panel.dataset.maxCols) panel.setAttribute('gs-max-w', panel.dataset.maxCols);
 
     // Position: prefer saved state, fall back to data-default-x/y so the
     // first load (no saved state) shows the professionally-arranged layout.
@@ -720,39 +607,12 @@
 
     dashboardPanels.forEach(buildPanelChrome);
 
-    const panel3d = document.getElementById('panel-3d');
-    if (panel3d) {
-      panel3d.style.display = 'block';
-      panel3d.classList.add('grid-stack-item');
-      panel3d.setAttribute('gs-w', panel3d.getAttribute('gs-w') || '4');
-      panel3d.setAttribute('gs-h', panel3d.getAttribute('gs-h') || '5');
-    }
-
-    const saved = loadPanelState();
-
-    const order = Array.isArray(saved.order) ? saved.order : [];
-
-    if (order.length) {
-      const lookup = new Map(dashboardPanels.map(panel => [panel.id, panel]));
-
-      order.forEach(id => {
-        const panel = lookup.get(id);
-        if (panel) dashboardGrid.appendChild(panel);
-      });
-    }
-
-    dashboardPanels.forEach(panel => {
-      const savedPanel = saved[panel.id] || {};
-
-      applyPanelSize(
-        panel,
-        Number(savedPanel.cols || panel.dataset.defaultCols || 4),
-        Number(savedPanel.height || panel.dataset.defaultHeight || 320),
-      );
-    });
-
     if (window.GridStack && dashboardGrid) {
       dashboardGrid.classList.add('grid-stack');
+
+      // init adopts only .grid-stack-item children; panels that start hidden
+      // join later through setPanelShown.
+      dashboardPanels.forEach(p => { if (p.style.display === 'none') p.classList.remove('grid-stack-item'); });
 
       grid = GridStack.init({
         column: 12,
@@ -760,7 +620,10 @@
         margin: 12,
         float: false,             // gravity: items compact upward, no holes
         animate: true,            // slide panels into place on drop
-        disableOneColumnMode: false,
+        // Switched by hand below: GridStack's built-in one-column mode, when the
+        // page loads narrow, stacks panels in insertion order and they push
+        // each other out of order.
+        disableOneColumnMode: true,
         minRow: 1,
         draggable: {
           cancel: 'button, input, select, textarea, summary, iframe, .topMenu, .menu'
@@ -770,8 +633,15 @@
         }
       }, dashboardGrid);
 
+      // Phones: one column, keeping the desktop reading order.
+      const narrow = window.matchMedia('(max-width: 768px)');
+      const fitColumns = () => grid.column(narrow.matches ? 1 : 12);
+      fitColumns();
+      narrow.addEventListener('change', fitColumns);
+
       grid.on('dragstart resizestart', (_event, el) => {
         isSorting = true;
+        set3DPaused(true);
         document.body.classList.add('dashboardSorting');
         if (el) el.classList.add('dashboardPanelMoving');
         // SSE data keeps flowing into pending; isSorting only blocks the
@@ -782,6 +652,7 @@
         if (el) el.classList.remove('dashboardPanelMoving');
         document.body.classList.remove('dashboardSorting');
         savePanelState();
+        set3DPaused(false);
         setTimeout(() => {
           isSorting = false;   // re-enable frame loop
           resizeAllPlots();    // fit Plotly to new cell dimensions
@@ -807,18 +678,7 @@
       dashboardPanels.forEach(panel => observer.observe(panel));
     }
 
-    window.addEventListener('resize', () => {
-      dashboardPanels.forEach(panel => {
-        applyPanelSize(
-          panel,
-          Number(panel.dataset.cols || panel.dataset.defaultCols || 4),
-          Number(panel.dataset.height || panel.dataset.defaultHeight || 320),
-        );
-      });
-
-      schedulePlotResize();
-      savePanelState();
-    });
+    window.addEventListener('resize', schedulePlotResize);
 
     plotDetailsEls.forEach(details => {
       details.addEventListener('toggle', schedulePlotResize);
@@ -831,17 +691,15 @@
 
   if (accelDiv)    initVectorPlot(accelDiv,    'Acceleration (g)');
   if (gyroDiv)     initVectorPlot(gyroDiv,     'Angular Rate (°/s)');
-  if (magDiv)      initVectorPlot(magDiv,      'Magnetic Field (µT)');
+  if (magDiv)      initVectorPlot(magDiv,      'Magnetic Field (mG)');
   if (tempDiv)     initScalarPlot(tempDiv,     'Temperature (°C)');
   if (pressureDiv) initScalarPlot(pressureDiv, 'Pressure (hPa)');
   if (altitudeDiv) initScalarPlot(altitudeDiv, 'Altitude (m)');
 
-  if (boardNameEl && board) {
-    boardNameEl.textContent = board;
-    document.title = board;
-  }
+  if (boardNameEl) boardNameEl.textContent = board ? `${board} · ${deviceKey}` : deviceKey;
+  document.title = `Kiwi · ${board || deviceKey}`;
 
-  uiStreams = getSelectedStreams();
+  selectedStreams = readSelectedStreams();
 
   const savedLiveValues = localStorage.getItem(LIVE_VALUES_KEY);
   if (liveValuesToggle) liveValuesToggle.checked = savedLiveValues === '1';
@@ -857,28 +715,66 @@
 
   applyStreamVisibility();
 
+  const recTimerEl = document.getElementById('recTimer');
+  function updateRecTimer() {
+    if (!recorder.isRecording || !recTimerEl) return;
+    const s = Math.floor((Date.now() - recorder.startedAt) / 1000);
+    const hh = Math.floor(s / 3600);
+    const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    recTimerEl.textContent = hh ? `${hh}:${mm}:${ss}` : `${mm}:${ss}`;
+  }
+  setInterval(updateRecTimer, 500);
+
   function updateRecorderUI() {
-    if (recCountEl) recCountEl.textContent = String(recorder.rows.length);
+    document.body.classList.toggle('recording', recorder.isRecording);
+    updateRecTimer();
+    if (recCountEl) recCountEl.textContent = recorder.rows.length.toLocaleString('en-US');
     if (recordBtn) recordBtn.disabled = recorder.isRecording;
     if (stopBtn) stopBtn.disabled = !recorder.isRecording;
     if (exportBtn) exportBtn.disabled = recorder.rows.length === 0;
   }
 
-  function recordRow(item) {
-    recorder.rows.push({
-      ts_ms: item.ts_ms,
-      sensor: item.sensor,
-      x: item.x,
-      y: item.y,
-      z: item.z,
-      value: item.value,
-    });
+  const kpiEls = {
+    accel: document.getElementById('kpi-accel'),
+    gyro: document.getElementById('kpi-gyro'),
+    mag: document.getElementById('kpi-mag'),
+    temp: document.getElementById('kpi-temp'),
+    pressure: document.getElementById('kpi-pressure'),
+    altitude: document.getElementById('kpi-altitude'),
+  };
+  const kpiAxesEls = {
+    accel: document.getElementById('kpi-accel-xyz'),
+    gyro: document.getElementById('kpi-gyro-xyz'),
+    mag: document.getElementById('kpi-mag-xyz'),
+  };
+  const KPI_DIGITS = { accel: 3, gyro: 2, mag: 1, temp: 2, pressure: 2, altitude: 1 };
+  const kpiLatest = {};
+  let lastKpiMs = 0;
+
+  function noteKpi(item) {
+    kpiLatest[item.sensor] = item;
+  }
+
+  function renderKpis(now) {
+    if (now - lastKpiMs < 100) return;
+    lastKpiMs = now;
+    for (const [sensor, el] of Object.entries(kpiEls)) {
+      const item = kpiLatest[sensor];
+      if (!item) continue;
+      const digits = KPI_DIGITS[sensor];
+      if (isVectorSensor(sensor)) {
+        if (el && Number.isFinite(item.mag)) el.textContent = item.mag.toFixed(digits);
+        const axesEl = kpiAxesEls[sensor];
+        if (axesEl) axesEl.textContent = `x ${item.x.toFixed(digits)} · y ${item.y.toFixed(digits)} · z ${item.z.toFixed(digits)}`;
+      } else if (el && Number.isFinite(item.value)) {
+        el.textContent = item.value.toFixed(digits);
+      }
+    }
   }
 
   function updateValuePanel(item) {
-    if (!isVectorSensor(item.sensor)) return;
-
-    if (tEl) tEl.textContent = `${item.ts_s.toFixed(3)} s`;
+    if (tEl) tEl.textContent = `${item.t_s.toFixed(3)} s`;
     if (xEl) xEl.textContent = item.x.toFixed(3);
     if (yEl) yEl.textContent = item.y.toFixed(3);
     if (zEl) zEl.textContent = item.z.toFixed(3);
@@ -888,86 +784,12 @@
   }
 
   function handleItem(item) {
-    bufferedPoints = Math.min(bufferedPoints + 1, maxPoints);
-    if (bufCountEl) bufCountEl.textContent = String(bufferedPoints);
-    if (recorder.isRecording) {
-      recordRow(item);
-      updateRecorderUI();
+    const s = item.sensor;
+    if (paused || !selectedStreams.has(s) || !plotVisible(plotDivs[s])) return;
+    for (const buf of [store[s], draw[s]]) {
+      buf.ts.push(item.t_s);
+      for (const k of seriesOf(s)) buf[k].push(item[k]);
     }
-
-    if (paused) return;
-
-    if (item.sensor === 'accel' && shouldDraw('accel') && plotVisible(accelDiv)) {
-      store.accel.ts.push(item.ts_s);
-      store.accel.x.push(item.x);
-      store.accel.y.push(item.y);
-      store.accel.z.push(item.z);
-      store.accel.mag.push(item.mag);
-
-      draw.accel.ts.push(item.ts_s);
-      draw.accel.x.push(item.x);
-      draw.accel.y.push(item.y);
-      draw.accel.z.push(item.z);
-      draw.accel.mag.push(item.mag);
-      draw.accel.theta.push(item.theta_deg);
-    } else if (item.sensor === 'gyro' && shouldDraw('gyro') && plotVisible(gyroDiv)) {
-      store.gyro.ts.push(item.ts_s);
-      store.gyro.x.push(item.x);
-      store.gyro.y.push(item.y);
-      store.gyro.z.push(item.z);
-      store.gyro.mag.push(item.mag);
-
-      draw.gyro.ts.push(item.ts_s);
-      draw.gyro.x.push(item.x);
-      draw.gyro.y.push(item.y);
-      draw.gyro.z.push(item.z);
-      draw.gyro.mag.push(item.mag);
-    } else if (item.sensor === 'mag' && shouldDraw('mag') && plotVisible(magDiv)) {
-      store.mag.ts.push(item.ts_s);
-      store.mag.x.push(item.x);
-      store.mag.y.push(item.y);
-      store.mag.z.push(item.z);
-      store.mag.mag.push(item.mag);
-
-      draw.mag.ts.push(item.ts_s);
-      draw.mag.x.push(item.x);
-      draw.mag.y.push(item.y);
-      draw.mag.z.push(item.z);
-      draw.mag.mag.push(item.mag);
-      draw.mag.theta.push(item.theta_deg);
-      draw.mag.phi.push(item.phi_deg);
-    } else if (item.sensor === 'temp' && shouldDraw('temp') && plotVisible(tempDiv)) {
-      store.temp.ts.push(item.ts_s);
-      store.temp.v.push(item.value);
-
-      draw.temp.ts.push(item.ts_s);
-      draw.temp.v.push(item.value);
-    } else if (item.sensor === 'pressure' && shouldDraw('pressure') && plotVisible(pressureDiv)) {
-      store.pressure.ts.push(item.ts_s);
-      store.pressure.v.push(item.value);
-
-      draw.pressure.ts.push(item.ts_s);
-      draw.pressure.v.push(item.value);
-    } else if (item.sensor === 'altitude' && shouldDraw('altitude') && plotVisible(altitudeDiv)) {
-      store.altitude.ts.push(item.ts_s);
-      store.altitude.v.push(item.value);
-
-      draw.altitude.ts.push(item.ts_s);
-      draw.altitude.v.push(item.value);
-    }
-  }
-
-  function yyyymmdd_hhmmss(ms) {
-    const d = new Date(ms);
-    const pad = n => String(n).padStart(2, '0');
-    const Y = d.getFullYear();
-    const M = pad(d.getMonth() + 1);
-    const D = pad(d.getDate());
-    const h = pad(d.getHours());
-    const m = pad(d.getMinutes());
-    const s = pad(d.getSeconds());
-
-    return `${Y}${M}${D}_${h}${m}${s}`;
   }
 
   function nudge3D() {
@@ -978,10 +800,18 @@
     } catch (_) {}
   }
 
+  // WebGL rendering competes with GridStack for the main thread; stop drawing
+  // the 3D view while a panel is being dragged or resized.
+  function set3DPaused(paused) {
+    try {
+      if (imu3dFrame?.contentWindow) imu3dFrame.contentWindow.kiwiPaused = paused;
+    } catch (_) {}
+  }
+
   function sync3DFrame() {
     if (!imu3dFrame) return;
 
-    const src = deviceId || 'all';
+    const src = deviceId;
     const next = `/3d/?src=${encodeURIComponent(src)}&embed=1`;
 
     if (imu3dFrame.getAttribute('src') !== next) {
@@ -999,250 +829,70 @@
     };
   }
 
-  function clearAccelDraw() {
-    draw.accel.ts.length = 0;
-    draw.accel.x.length = 0;
-    draw.accel.y.length = 0;
-    draw.accel.z.length = 0;
-    draw.accel.mag.length = 0;
-    draw.accel.theta.length = 0;
+  function firstIndexAtOrAfter(ts, t) {
+    let i = 0;
+    while (i < ts.length && ts[i] < t) i++;
+    return i;
   }
 
-  function clearGyroDraw() {
-    draw.gyro.ts.length = 0;
-    draw.gyro.x.length = 0;
-    draw.gyro.y.length = 0;
-    draw.gyro.z.length = 0;
-    draw.gyro.mag.length = 0;
-  }
-
-  function clearMagDraw() {
-    draw.mag.ts.length = 0;
-    draw.mag.x.length = 0;
-    draw.mag.y.length = 0;
-    draw.mag.z.length = 0;
-    draw.mag.mag.length = 0;
-    draw.mag.theta.length = 0;
-    draw.mag.phi.length = 0;
-  }
-
-  function clearTempDraw() {
-    draw.temp.ts.length = 0;
-    draw.temp.v.length = 0;
-  }
-
-  function clearPressureDraw() {
-    draw.pressure.ts.length = 0;
-    draw.pressure.v.length = 0;
-  }
-
-  function clearAltitudeDraw() {
-    draw.altitude.ts.length = 0;
-    draw.altitude.v.length = 0;
-  }
-
-  function trimVectorStore(storeObj) {
-    if (!storeObj.ts.length) return null;
-
-    const latest = storeObj.ts[storeObj.ts.length - 1];
-    const cutoff = latest - Math.max(windowSec * 3, 30);
-
-    let idx = 0;
-    while (idx < storeObj.ts.length && storeObj.ts[idx] < cutoff) idx++;
-
-    if (idx > 0) {
-      storeObj.ts.splice(0, idx);
-      storeObj.x.splice(0, idx);
-      storeObj.y.splice(0, idx);
-      storeObj.z.splice(0, idx);
-      storeObj.mag.splice(0, idx);
-    }
-
-    return latest;
-  }
-
-  function trimScalarStore(storeObj) {
-    if (!storeObj.ts.length) return null;
-
-    const latest = storeObj.ts[storeObj.ts.length - 1];
-    const cutoff = latest - Math.max(windowSec * 3, 30);
-
-    let idx = 0;
-    while (idx < storeObj.ts.length && storeObj.ts[idx] < cutoff) idx++;
-
-    if (idx > 0) {
-      storeObj.ts.splice(0, idx);
-      storeObj.v.splice(0, idx);
-    }
-
-    return latest;
-  }
-
-  function selectVectorWindow(storeObj) {
-    if (!storeObj.ts.length) return null;
-
-    const latest = storeObj.ts[storeObj.ts.length - 1];
-    const cutoff = latest - windowSec;
-
-    let idx = 0;
-    while (idx < storeObj.ts.length && storeObj.ts[idx] < cutoff) idx++;
-
-    return {
-      latest,
-      ts: storeObj.ts.slice(idx),
-      x: storeObj.x.slice(idx),
-      y: storeObj.y.slice(idx),
-      z: storeObj.z.slice(idx),
-      mag: storeObj.mag.slice(idx),
-    };
-  }
-
-  function selectScalarWindow(storeObj) {
-    if (!storeObj.ts.length) return null;
-
-    const latest = storeObj.ts[storeObj.ts.length - 1];
-    const cutoff = latest - windowSec;
-
-    let idx = 0;
-    while (idx < storeObj.ts.length && storeObj.ts[idx] < cutoff) idx++;
-
-    return {
-      latest,
-      ts: storeObj.ts.slice(idx),
-      v: storeObj.v.slice(idx),
-    };
-  }
-
-  function resyncVector(div, selected) {
-    if (!div || !selected) return;
-
-    Plotly.restyle(
-      div,
-      {
-        x: [selected.ts, selected.ts, selected.ts, selected.ts],
-        y: [selected.x, selected.y, selected.z, selected.mag],
-      },
-      [0, 1, 2, 3],
-    );
-
-    Plotly.relayout(div, {
-      'xaxis.range': [selected.latest - windowSec, selected.latest],
-    });
-  }
-
-  function resyncScalar(div, selected) {
-    if (!div || !selected) return;
-
-    Plotly.restyle(
-      div,
-      {
-        x: [selected.ts],
-        y: [selected.v],
-      },
-      [0],
-    );
-
-    Plotly.relayout(div, {
-      'xaxis.range': [selected.latest - windowSec, selected.latest],
-    });
-  }
-
+  // Append new points to each plot; x-axis ranges follow at 10 Hz.
   function flush() {
     const now = performance.now();
-    const doRelayout = (now - lastRelayoutMs) >= RELAYOUT_MS;
+    const doRelayout = now - lastRelayoutMs >= RELAYOUT_MS;
     if (doRelayout) lastRelayoutMs = now;
 
-    // Cap Plotly's internal trace buffer at 150 % of the display window so
-    // the SVG layer never accumulates unbounded points between resyncs.
-    const ptCap = Math.max(200, Math.round(maxPoints * 1.5));
-
-    if (accelDiv && draw.accel.ts.length) {
-      relayoutLatest.accel = draw.accel.ts[draw.accel.ts.length - 1];
-      Plotly.extendTraces(
-        accelDiv,
-        {
-          x: [draw.accel.ts, draw.accel.ts, draw.accel.ts, draw.accel.ts],
-          y: [draw.accel.x, draw.accel.y, draw.accel.z, draw.accel.mag],
-        },
-        [0, 1, 2, 3],
-        ptCap,
-      );
-      clearAccelDraw();
-    }
-
-    if (gyroDiv && draw.gyro.ts.length) {
-      relayoutLatest.gyro = draw.gyro.ts[draw.gyro.ts.length - 1];
-      Plotly.extendTraces(
-        gyroDiv,
-        {
-          x: [draw.gyro.ts, draw.gyro.ts, draw.gyro.ts, draw.gyro.ts],
-          y: [draw.gyro.x, draw.gyro.y, draw.gyro.z, draw.gyro.mag],
-        },
-        [0, 1, 2, 3],
-        ptCap,
-      );
-      clearGyroDraw();
-    }
-
-    if (magDiv && draw.mag.ts.length) {
-      relayoutLatest.mag = draw.mag.ts[draw.mag.ts.length - 1];
-      Plotly.extendTraces(
-        magDiv,
-        {
-          x: [draw.mag.ts, draw.mag.ts, draw.mag.ts, draw.mag.ts],
-          y: [draw.mag.x, draw.mag.y, draw.mag.z, draw.mag.mag],
-        },
-        [0, 1, 2, 3],
-        ptCap,
-      );
-      clearMagDraw();
-    }
-
-    if (tempDiv && draw.temp.ts.length) {
-      relayoutLatest.temp = draw.temp.ts[draw.temp.ts.length - 1];
-      Plotly.extendTraces(tempDiv, { x: [draw.temp.ts], y: [draw.temp.v] }, [0], ptCap);
-      clearTempDraw();
-    }
-
-    if (pressureDiv && draw.pressure.ts.length) {
-      relayoutLatest.pressure = draw.pressure.ts[draw.pressure.ts.length - 1];
-      Plotly.extendTraces(pressureDiv, { x: [draw.pressure.ts], y: [draw.pressure.v] }, [0], ptCap);
-      clearPressureDraw();
-    }
-
-    if (altitudeDiv && draw.altitude.ts.length) {
-      relayoutLatest.altitude = draw.altitude.ts[draw.altitude.ts.length - 1];
-      Plotly.extendTraces(altitudeDiv, { x: [draw.altitude.ts], y: [draw.altitude.v] }, [0], ptCap);
-      clearAltitudeDraw();
-    }
-
-    // Batch all xaxis range updates at 10 Hz — far cheaper than 30 Hz
-    if (doRelayout) {
-      if (accelDiv    && relayoutLatest.accel    != null) Plotly.relayout(accelDiv,    { 'xaxis.range': [relayoutLatest.accel    - windowSec, relayoutLatest.accel]    });
-      if (gyroDiv     && relayoutLatest.gyro     != null) Plotly.relayout(gyroDiv,     { 'xaxis.range': [relayoutLatest.gyro     - windowSec, relayoutLatest.gyro]     });
-      if (magDiv      && relayoutLatest.mag      != null) Plotly.relayout(magDiv,      { 'xaxis.range': [relayoutLatest.mag      - windowSec, relayoutLatest.mag]      });
-      if (tempDiv     && relayoutLatest.temp     != null) Plotly.relayout(tempDiv,     { 'xaxis.range': [relayoutLatest.temp     - windowSec, relayoutLatest.temp]     });
-      if (pressureDiv && relayoutLatest.pressure != null) Plotly.relayout(pressureDiv, { 'xaxis.range': [relayoutLatest.pressure - windowSec, relayoutLatest.pressure] });
-      if (altitudeDiv && relayoutLatest.altitude != null) Plotly.relayout(altitudeDiv, { 'xaxis.range': [relayoutLatest.altitude - windowSec, relayoutLatest.altitude] });
+    for (const s of PLOTTED) {
+      const div = plotDivs[s];
+      const buf = draw[s];
+      if (!div) continue;
+      if (buf.ts.length) {
+        const keys = seriesOf(s);
+        relayoutLatest[s] = buf.ts[buf.ts.length - 1];
+        Plotly.extendTraces(div, { x: keys.map(() => buf.ts), y: keys.map((k) => buf[k]) }, traceIndices(keys));
+        clearBuffer(buf);
+      }
+      if (doRelayout && relayoutLatest[s] != null) {
+        Plotly.relayout(div, { 'xaxis.range': [relayoutLatest[s] - windowSec, relayoutLatest[s]] });
+      }
     }
   }
 
+  // Every second: drop history older than three windows (at least 30 s) and
+  // redraw each plot from it, so Plotly's buffers hold exactly the window.
   function resyncPlots() {
-    trimVectorStore(store.accel);
-    trimVectorStore(store.gyro);
-    trimVectorStore(store.mag);
-    trimScalarStore(store.temp);
-    trimScalarStore(store.pressure);
-    trimScalarStore(store.altitude);
+    for (const s of PLOTTED) {
+      const buf = store[s];
+      const div = plotDivs[s];
+      if (!buf.ts.length) continue;
 
-    resyncVector(accelDiv, selectVectorWindow(store.accel));
-    resyncVector(gyroDiv, selectVectorWindow(store.gyro));
-    resyncVector(magDiv, selectVectorWindow(store.mag));
-    resyncScalar(tempDiv, selectScalarWindow(store.temp));
-    resyncScalar(pressureDiv, selectScalarWindow(store.pressure));
-    resyncScalar(altitudeDiv, selectScalarWindow(store.altitude));
+      const latest = buf.ts[buf.ts.length - 1];
+      const old = firstIndexAtOrAfter(buf.ts, latest - Math.max(windowSec * 3, 30));
+      if (old) for (const arr of Object.values(buf)) arr.splice(0, old);
+      if (!div) continue;
+
+      const from = firstIndexAtOrAfter(buf.ts, latest - windowSec);
+      const ts = buf.ts.slice(from);
+      const keys = seriesOf(s);
+      Plotly.restyle(div, { x: keys.map(() => ts), y: keys.map((k) => buf[k].slice(from)) }, traceIndices(keys));
+      Plotly.relayout(div, { 'xaxis.range': [latest - windowSec, latest] });
+      if (s === 'accel' && windowPointsEl) windowPointsEl.textContent = String(ts.length);
+    }
 
     schedulePlotResize();
+  }
+
+  function clearAllPlots() {
+    pending = [];
+    latestAccel = null;
+    for (const s of PLOTTED) {
+      clearBuffer(store[s]);
+      clearBuffer(draw[s]);
+      relayoutLatest[s] = null;
+      const div = plotDivs[s];
+      if (!div) continue;
+      const keys = seriesOf(s);
+      Plotly.restyle(div, { x: keys.map(() => []), y: keys.map(() => []) }, traceIndices(keys));
+    }
   }
 
   applySettings();
@@ -1251,47 +901,21 @@
   sync3DFrame();
   initPanelLayout();
 
-setTimeout(() => {
-  if (typeof resizeAllPlots === 'function') {
+  setTimeout(() => {
     resizeAllPlots();
-  }
-  // Apply the saved crosshair preference now that all plots exist
-  if (savedCrosshair) applyCrosshairMode(true);
-}, 300);
-
+    // Apply the saved crosshair preference now that all plots exist.
+    if (savedCrosshair) applyCrosshairMode(true);
+  }, 300);
 
   windowInput?.addEventListener('change', () => {
     applySettings();
     resyncPlots();
-    bufferedPoints = 0;
-    setConn('ok', `connected (${deviceKey})`);
   });
 
-  rateInput?.addEventListener('change', () => {
-    applySettings();
-    bufferedPoints = 0;
-    setConn('ok', `connected (${deviceKey})`);
-  });
-
-  streamSelect?.addEventListener('change', () => {
-    uiStreams = getSelectedStreams();
-    uiStream = streamSelect.value;
-    syncChecksFromSelect();
+  streamChecksEl?.addEventListener('change', () => {
+    selectedStreams = readSelectedStreams();
     applyStreamVisibility();
   });
-
-  if (streamChecksEl) {
-    const checks = Array.from(streamChecksEl.querySelectorAll('input[type="checkbox"]'));
-
-    checks.forEach(c => {
-      c.addEventListener('change', () => {
-        syncSelectFromChecks();
-        uiStreams = getSelectedStreams();
-        uiStream = streamSelect ? streamSelect.value : 'all';
-        applyStreamVisibility();
-      });
-    });
-  }
 
   liveValuesToggle?.addEventListener('change', () => {
     applyLiveValuesVisibility();
@@ -1308,8 +932,22 @@ setTimeout(() => {
     const v = themeSelect.value || 'dark';
     localStorage.setItem('theme', v);
     applyTheme(v);
-    applyThemeToPlots(v);
+    applyThemeToPlots();
+    try {
+      imu3dFrame?.contentWindow?.kiwiSetTheme?.(v);
+    } catch (_) {}
     schedulePlotResize();
+  });
+
+  // Keep every open Kiwi page (tabs, embedded dashboards) on the same theme.
+  window.addEventListener('storage', e => {
+    if (e.key !== 'theme' || !e.newValue) return;
+    if (themeSelect) themeSelect.value = e.newValue;
+    applyTheme(e.newValue);
+    applyThemeToPlots();
+    try {
+      imu3dFrame?.contentWindow?.kiwiSetTheme?.(e.newValue);
+    } catch (_) {}
   });
 
   paletteSelect?.addEventListener('change', () => {
@@ -1324,81 +962,51 @@ setTimeout(() => {
   });
 
   recordBtn?.addEventListener('click', () => {
-    recorder.isRecording = true;
-    recorder.startedAt = Date.now();
-    recorder.rows.length = 0;
+    recorder.start();
     updateRecorderUI();
   });
 
   stopBtn?.addEventListener('click', () => {
-    recorder.isRecording = false;
+    recorder.stop();
     updateRecorderUI();
   });
 
-  exportBtn?.addEventListener('click', async () => {
-    if (!recorder.rows.length) return;
-
-    if (!window.XLSX) {
+  // The Excel library (~0.9 MB) is loaded on first export only.
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve();
+    return new Promise((resolve, reject) => {
       const s = document.createElement('script');
       s.src = '/xlsx.full.min.js';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('could not load /xlsx.full.min.js'));
+      document.head.appendChild(s);
+    });
+  }
 
-      await new Promise((r, j) => {
-        s.onload = r;
-        s.onerror = j;
-        document.head.appendChild(s);
-      });
-    }
-
-    const wb = XLSX.utils.book_new();
-
-    const vecSensors = ['accel', 'gyro', 'mag'];
-
-    for (const s of vecSensors) {
-      const rows = recorder.rows.filter(r => r.sensor === s);
-      const shaped = rows.map(r => ({
-        // elapsed_ms: time in milliseconds since the first received packet
-        // (not a Unix epoch — use the filename timestamp for absolute reference)
-        elapsed_ms: r.ts_ms,
-        x: r.x,
-        y: r.y,
-        z: r.z,
-        magnitude: r.mag ?? null,
-      }));
-
-      const ws = XLSX.utils.json_to_sheet(shaped);
-      XLSX.utils.book_append_sheet(wb, ws, s.toUpperCase());
-    }
-
-    const baroRows = recorder.rows.filter(r => r.sensor === 'temp' || r.sensor === 'pressure' || r.sensor === 'altitude');
-    const map = new Map();
-
-    for (const r of baroRows) {
-      let row = map.get(r.ts_ms);
-
-      if (!row) {
-        row = { elapsed_ms: r.ts_ms, temp_C: null, pressure_hPa: null, altitude_m: null };
-        map.set(r.ts_ms, row);
+  exportBtn?.addEventListener('click', async () => {
+    if (!recorder.rows.length) return;
+    const label = exportBtn.textContent;
+    exportBtn.disabled = true;
+    exportBtn.textContent = 'Exporting…';
+    try {
+      await loadXlsx();
+      const wb = XLSX.utils.book_new();
+      for (const sheet of buildSheets(recorder.rows)) {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheet.rows), sheet.name);
       }
-
-      if (r.sensor === 'temp') row.temp_C = r.value;
-      else if (r.sensor === 'pressure') row.pressure_hPa = r.value;
-      else if (r.sensor === 'altitude') row.altitude_m = r.value;
+      XLSX.writeFile(wb, exportFilename(board, deviceKey, recorder.startedAt ?? Date.now()));
+    } catch (err) {
+      // Keep the recording so the user can retry; never fail silently.
+      console.error('Excel export failed:', err);
+      window.alert(`Excel export failed: ${err.message}. The recording is kept; try again.`);
+    } finally {
+      exportBtn.textContent = label;
+      updateRecorderUI();
     }
-
-    const baroShaped = Array.from(map.values()).sort((a, b) => a.elapsed_ms - b.elapsed_ms);
-    const wsBaro = XLSX.utils.json_to_sheet(baroShaped);
-
-    XLSX.utils.book_append_sheet(wb, wsBaro, 'BARO');
-
-    const startedAt = recorder.startedAt ?? Date.now();
-    const base = board ? board.replace(/[^\w\-]+/g, '_') : 'kiwi';
-    const filename = `${base}_${deviceKey}_${yyyymmdd_hhmmss(startedAt)}.xlsx`;
-
-    XLSX.writeFile(wb, filename);
   });
 
   open3dBtn?.addEventListener('click', () => {
-    const src = deviceId || 'all';
+    const src = deviceId;
     const url = `/3d/?src=${encodeURIComponent(src)}`;
     window.location.href = url;
   });
@@ -1415,233 +1023,20 @@ setTimeout(() => {
     btn.addEventListener('click', () => applyLayout(btn.dataset.layout));
   });
 
-  setConn('warn', 'connecting…');
+  setConn('warn', 'Connecting…');
 
   if (reconnectsEl) reconnectsEl.textContent = '0';
   if (lastSeenEl) lastSeenEl.textContent = '-';
-  if (bufMaxEl) bufMaxEl.textContent = String(maxPoints);
-  if (bufCountEl) bufCountEl.textContent = '0';
 
-  const workerSrc = `
-    let firstTs = null;
-
-    function normalizeTimestampToSec(t) {
-      const n = Number(t);
-      const raw = Number.isFinite(n) ? n : Date.now() / 1000;
-      let sec;
-
-      // Disambiguation by magnitude — chosen so device uptime µs never
-      // collides with Unix-epoch representations:
-      //   > 1.6e15  → Unix epoch in µs  (divide by 1 000 000)
-      //   > 1.6e12  → Unix epoch in ms  (divide by 1 000)
-      //   > 1.6e9   → Unix epoch in s   (keep as-is; ~year 2020+)
-      //   else      → device uptime in µs, any duration (divide by 1 000 000)
-      //
-      // The old threshold (1e9) caused timestamps > 16.7 min of device uptime
-      // to be misread as Unix seconds, corrupting the X-axis range.
-      if      (raw > 1_600_000_000_000_000) sec = raw / 1_000_000;  // µs epoch
-      else if (raw > 1_600_000_000_000)     sec = raw / 1_000;       // ms epoch
-      else if (raw > 1_600_000_000)         sec = raw;               // s epoch
-      else                                  sec = raw / 1_000_000;   // uptime µs
-
-      if (firstTs === null) firstTs = sec;
-
-      const elapsed = sec - firstTs;
-      return Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : 0;
-    }
-
-    function safeNum(v) {
-      const n = Number(v);
-      return Number.isFinite(n) ? n : null;
-    }
-
-    function isVectorSensor(s) {
-      return s === 'accel' || s === 'gyro' || s === 'mag';
-    }
-
-    function remapVector(type, x, y, z) {
-      if (type === 'accel') return { x: y, y: x, z: -z };
-      if (type === 'gyro') return { x, y, z };
-      if (type === 'mag') return { x, y, z };
-      return { x, y, z };
-    }
-
-    function magnitude(x, y, z) {
-      return Math.sqrt(x * x + y * y + z * z);
-    }
-
-    function toDeg(rad) {
-      return (rad * 180) / Math.PI;
-    }
-
-    function anglesDeg(x, y, z) {
-      const phi = toDeg(Math.atan2(y, x));
-      const rho = Math.sqrt(x * x + y * y);
-      const theta = toDeg(Math.atan2(rho, z));
-
-      return { phi_deg: phi, theta_deg: theta };
-    }
-
-    function normalizeItem(raw) {
-      const type = String(raw.sensor ?? '').toLowerCase();
-      const ts_s = normalizeTimestampToSec(raw.ts ?? raw.timestamp ?? Date.now());
-      const ts_ms = Math.round(ts_s * 1000);
-
-      if (isVectorSensor(type)) {
-        const rx = safeNum(raw.x);
-        const ry = safeNum(raw.y);
-        const rz = safeNum(raw.z);
-
-        if (rx === null || ry === null || rz === null) return null;
-
-        const v = remapVector(type, rx, ry, rz);
-        const mag = magnitude(v.x, v.y, v.z);
-        const ang = anglesDeg(v.x, v.y, v.z);
-
-        return {
-          sensor: type,
-          ts_s,
-          ts_ms,
-          x: v.x,
-          y: v.y,
-          z: v.z,
-          mag,
-          theta_deg: ang.theta_deg,
-          phi_deg: ang.phi_deg,
-          value: null
-        };
-      }
-
-      if (type === 'temp' || type === 'pressure' || type === 'altitude') {
-        const value = safeNum(raw.value);
-        if (value === null) return null;
-
-        return {
-          sensor: type,
-          ts_s,
-          ts_ms,
-          x: null,
-          y: null,
-          z: null,
-          mag: null,
-          theta_deg: null,
-          phi_deg: null,
-          value
-        };
-      }
-
-      return null;
-    }
-
-    function vectorFromObject(sensor, obj, ts) {
-      if (!obj) return null;
-
-      return normalizeItem({
-        sensor,
-        ts,
-        x: obj.x ?? obj.X,
-        y: obj.y ?? obj.Y,
-        z: obj.z ?? obj.Z
-      });
-    }
-
-    function scalarFromValue(sensor, value, ts) {
-      return normalizeItem({ sensor, ts, value });
-    }
-
-    function unpackDummy(raw) {
-      if (!raw || typeof raw !== 'object') return null;
-
-      const ts = raw.ts ?? raw.timestamp ?? Date.now();
-      const out = [];
-
-      const accel = vectorFromObject('accel', raw.accel ?? raw.Accel, ts);
-      const gyro = vectorFromObject('gyro', raw.gyro ?? raw.Gyro, ts);
-      const mag = vectorFromObject('mag', raw.mag ?? raw.Mag, ts);
-
-      if (accel) out.push(accel);
-      if (gyro) out.push(gyro);
-      if (mag) out.push(mag);
-
-      const tempValue = raw.temperature ?? raw.temp ?? raw.Temperature;
-      const pressureValue = raw.pressure ?? raw.Pressure;
-      const altitudeValue = raw.altitude ?? raw.Altitude;
-
-      const temp = scalarFromValue('temp', tempValue, ts);
-      const pressure = scalarFromValue('pressure', pressureValue, ts);
-      const altitude = scalarFromValue('altitude', altitudeValue, ts);
-
-      if (temp) out.push(temp);
-      if (pressure) out.push(pressure);
-      if (altitude) out.push(altitude);
-
-      return out.length ? out : null;
-    }
-
-    function unpackSerde(raw) {
-      if (!raw || !raw.measurement) return null;
-
-      const ts = raw.timestamp ?? Date.now();
-      const keys = Object.keys(raw.measurement);
-
-      if (keys.length !== 1) return null;
-
-      const variant = keys[0];
-      const values = raw.measurement[variant];
-
-      if (Array.isArray(values) && values.length === 3 && variant !== 'Baro') {
-        return normalizeItem({
-          sensor: variant.toLowerCase(),
-          x: values[0],
-          y: values[1],
-          z: values[2],
-          ts
-        });
-      }
-
-      if (variant === 'Baro' && Array.isArray(values) && values.length === 3) {
-        return [
-          normalizeItem({ sensor: 'temp', value: values[0], ts }),
-          normalizeItem({ sensor: 'pressure', value: values[1], ts }),
-          normalizeItem({ sensor: 'altitude', value: values[2], ts })
-        ].filter(Boolean);
-      }
-
-      return null;
-    }
-
-    self.onmessage = (ev) => {
-      const text = ev.data;
-      let parsed;
-
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        return;
-      }
-
-      const items = Array.isArray(parsed) ? parsed : [parsed];
-      const out = [];
-
-      for (const raw of items) {
-        const serde = unpackSerde(raw);
-        const dummy = serde ? null : unpackDummy(raw);
-        const unpacked = serde ?? dummy;
-
-        if (!unpacked) continue;
-
-        const list = Array.isArray(unpacked) ? unpacked : [unpacked];
-
-        for (const item of list) {
-          if (item) out.push(item);
-        }
-      }
-
-      if (out.length) self.postMessage(out);
-    };
-  `;
-
-  const worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: 'application/javascript' })));
+  // Parsing happens off the UI thread; see parser.worker.js.
+  const worker = new Worker('/parser.worker.js', { type: 'module' });
+  // Without the parser nothing reaches the plots or the recording: say so.
+  worker.onerror = (e) => {
+    e.preventDefault();
+    setConn('bad', 'Data parser failed · reload the page');
+    console.error('parser.worker.js failed:', e.message);
+  };
+  worker.onmessageerror = () => setConn('bad', 'Data parser failed · reload the page');
 
   const MAX_PENDING = 20000;
 
@@ -1654,18 +1049,44 @@ setTimeout(() => {
   }
 
   worker.onmessage = ev => {
-    const batch = ev.data;
+    const msg = ev.data;
 
-    for (const item of batch) {
+    if (msg.type === 'reset') {
+      // The board rebooted: its clock restarted, so the old traces no longer line up.
+      clearAllPlots();
+      restartNote = ` · device restarted ${fmtTime(Date.now())}`;
+      setConn('warn', connectedText());
+      return;
+    }
+
+    // Record first, so recordings never depend on display throttling.
+    if (recorder.isRecording) {
+      recorder.add(msg.items, msg.host_ms);
+      updateRecorderUI();
+    }
+
+    for (const item of msg.items) {
       enqueue(item);
     }
   };
 
   // ── Widget: Attitude Indicator ────────────────────────────────────────────
-  // Classic artificial horizon drawn on <canvas> from accel X/Y/Z.
-  // Roll  = atan2(ay, az)
-  // Pitch = atan2(-ax, sqrt(ay²+az²))
-  let _horizonAnimId = 0;
+  // Classic artificial horizon drawn on <canvas> from the latest accel sample.
+
+  function getHorizonColors() {
+    if (!horizonColors) {
+      const light = document.body.classList.contains('light');
+      horizonColors = {
+        sky: light ? '#cfe3f7' : '#0e2a4b',
+        ground: light ? '#e9d3b4' : '#2e1d0e',
+        line: getCss('--accent'),
+        ink: light ? 'rgba(15,23,42,.55)' : 'rgba(231,235,243,.55)',
+        inkStrong: light ? 'rgba(15,23,42,.75)' : 'rgba(231,235,243,.8)',
+        bezel: getCss('--hairline-strong'),
+      };
+    }
+    return horizonColors;
+  }
 
   function drawHorizon() {
     if (!horizonCanvas || panelHorizon?.style.display === 'none') return;
@@ -1683,15 +1104,10 @@ setTimeout(() => {
       horizonCanvas.style.height = H + 'px';
     }
 
-    const accelX = store.accel.x, accelY = store.accel.y, accelZ = store.accel.z;
-    const n = accelX.length;
-    const ax = n ? accelX[n - 1] : 0;
-    const ay = n ? accelY[n - 1] : 0;
-    const az = n ? accelZ[n - 1] : 0;
+    const { x: ax = 0, y: ay = 0, z: az = 0 } = latestAccel ?? {};
+    const { roll: rollDeg, pitch: pitchDeg } = tiltDeg(ax, ay, az);
 
-    const rollDeg  = Math.atan2(ay, az) * 180 / Math.PI;
-    const pitchDeg = Math.atan2(-ax, Math.sqrt(ay * ay + az * az)) * 180 / Math.PI;
-
+    const hc = getHorizonColors();
     const ctx = horizonCanvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
@@ -1713,14 +1129,14 @@ setTimeout(() => {
     const pitchPx = (pitchDeg / 90) * R;  // 1 radius = 90°
 
     // Sky
-    ctx.fillStyle = '#071b30';
+    ctx.fillStyle = hc.sky;
     ctx.fillRect(-W * 2, -H * 2 - pitchPx, W * 4, H * 2);
     // Ground
-    ctx.fillStyle = '#1c0c00';
+    ctx.fillStyle = hc.ground;
     ctx.fillRect(-W * 2, -pitchPx, W * 4, H * 2);
 
     // Horizon line
-    ctx.strokeStyle = '#f59e0b';
+    ctx.strokeStyle = hc.line;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(-W * 2, -pitchPx);
@@ -1729,21 +1145,21 @@ setTimeout(() => {
 
     // Pitch ladder — tick every 10°, label every 20°
     const labelSize = Math.round(R * 0.12);
-    ctx.font = `${labelSize}px ui-monospace, monospace`;
+    ctx.font = `${labelSize}px 'JetBrains Mono', ui-monospace, monospace`;
     ctx.textBaseline = 'middle';
 
     for (let p = -40; p <= 40; p += 10) {
       if (p === 0) continue;
       const py  = -pitchPx - (p / 90) * R;
       const len = (Math.abs(p) % 20 === 0) ? R * 0.32 : R * 0.18;
-      ctx.strokeStyle = 'rgba(245,240,232,.4)';
+      ctx.strokeStyle = hc.ink;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(-len, py);
       ctx.lineTo(len, py);
       ctx.stroke();
       if (Math.abs(p) % 20 === 0) {
-        ctx.fillStyle = 'rgba(245,240,232,.65)';
+        ctx.fillStyle = hc.inkStrong;
         ctx.textAlign = 'left';
         ctx.fillText(String(Math.abs(p)), len + R * 0.06, py);
         ctx.textAlign = 'right';
@@ -1760,7 +1176,7 @@ setTimeout(() => {
       const a   = (deg - 90) * Math.PI / 180;
       const big = [0, 30, -30, 45, -45, 60, -60].includes(deg);
       const len = big ? R * 0.13 : R * 0.07;
-      ctx.strokeStyle = 'rgba(245,240,232,.45)';
+      ctx.strokeStyle = hc.ink;
       ctx.lineWidth   = deg === 0 ? 2 : 1;
       ctx.beginPath();
       ctx.moveTo(cx + (arcR - len) * Math.cos(a), cy + (arcR - len) * Math.sin(a));
@@ -1772,7 +1188,7 @@ setTimeout(() => {
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(rollDeg * Math.PI / 180);
-    ctx.fillStyle = '#f59e0b';
+    ctx.fillStyle = hc.line;
     ctx.beginPath();
     const ti = arcR - R * 0.06, to = arcR + R * 0.06, tw = R * 0.05;
     ctx.moveTo(0, -ti);
@@ -1785,7 +1201,7 @@ setTimeout(() => {
     ctx.restore();  // undo clip
 
     // ── outer bezel ring ────────────────────────────────────────────────────
-    ctx.strokeStyle = 'rgba(251,191,36,.35)';
+    ctx.strokeStyle = hc.bezel;
     ctx.lineWidth   = 2;
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, Math.PI * 2);
@@ -1793,7 +1209,7 @@ setTimeout(() => {
 
     // ── fixed aircraft symbol ───────────────────────────────────────────────
     const aw = R * 0.34, aIn = R * 0.12, aD = R * 0.08;
-    ctx.strokeStyle = '#f59e0b';
+    ctx.strokeStyle = hc.line;
     ctx.lineWidth   = 3;
     ctx.lineCap     = 'round';
     ctx.beginPath();
@@ -1840,11 +1256,10 @@ setTimeout(() => {
     }, 150);
   }
 
-  const esUrl = deviceId ? `/devices/${encodeURIComponent(deviceId)}/events` : '/events';
-  const es = new EventSource(esUrl);
+  const es = new EventSource(`/devices/${encodeURIComponent(deviceId)}/events`);
 
   es.onopen = () => {
-    setConn('ok', `connected (${deviceKey})`);
+    setConn('ok', connectedText());
   };
 
   es.onmessage = e => {
@@ -1854,7 +1269,7 @@ setTimeout(() => {
   es.onerror = () => {
     reconnects += 1;
     if (reconnectsEl) reconnectsEl.textContent = String(reconnects);
-    setConn('bad', 'disconnected (auto-retrying…)');
+    setConn('bad', 'Disconnected · retrying');
   };
 
   function frame(now) {
@@ -1862,19 +1277,22 @@ setTimeout(() => {
       lastFrameMs = now;
 
       if (pending.length) {
-        const MAX_LAG_ITEMS = maxPoints;
+        // If rendering fell behind, skip only samples already older than the
+        // visible window; everything inside the window is still drawn.
+        const newest = pending[pending.length - 1].t_s;
+        let stale = 0;
+        while (stale < pending.length && pending[stale].t_s < newest - windowSec) stale++;
+        if (stale) pending.splice(0, stale);
 
-        if (pending.length > MAX_LAG_ITEMS) {
-          pending.splice(0, pending.length - MAX_LAG_ITEMS);
-        }
-
-        const batch = pending.splice(0, 600);
-        let lastVector = null;
+        const batch = pending.splice(0, 4000);
+        let lastAccel = null;
 
         for (const item of batch) {
-          if (isVectorSensor(item.sensor)) lastVector = item;
+          if (item.sensor === 'accel') lastAccel = item;
+          noteKpi(item);
           handleItem(item);
         }
+        renderKpis(now);
 
         flush();
 
@@ -1883,13 +1301,16 @@ setTimeout(() => {
           lastResyncMs = now;
         }
 
-        if (lastVector) updateValuePanel(lastVector);
+        if (lastAccel) {
+          latestAccel = lastAccel;
+          updateValuePanel(lastAccel);
+        }
 
         if (recorder.isRecording && batch.length) {
           updateRecorderUI();
         }
 
-        setConn('ok', `connected (${deviceKey})`);
+        setConn('ok', connectedText());
         updateLastSeen();
       }
     }
@@ -1907,11 +1328,20 @@ setTimeout(() => {
   const topMenuEl = document.getElementById('topMenu');
 
   // Sync body class so CSS can block grid interactions behind the menu
+  document.addEventListener('pointerdown', e => {
+    if (topMenuEl?.open && !topMenuEl.contains(e.target)) topMenuEl.open = false;
+  });
+
   topMenuEl?.addEventListener('toggle', () => {
     document.body.classList.toggle('menuOpen', !!topMenuEl.open);
   });
 
   document.addEventListener('keydown', e => {
+    // Escape always closes the menu, even while a control inside it has focus.
+    if (e.key === 'Escape') {
+      if (topMenuEl) topMenuEl.open = false;
+      return;
+    }
     // Skip if focus is inside a form control or contenteditable
     const tag = (e.target?.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
@@ -1953,11 +1383,6 @@ setTimeout(() => {
         // Toggle the ☰ menu open/closed
         if (topMenuEl) topMenuEl.open = !topMenuEl.open;
         e.preventDefault();
-        break;
-
-      case 'Escape':
-        // Close the menu (no-op if already closed)
-        if (topMenuEl) topMenuEl.open = false;
         break;
     }
   });

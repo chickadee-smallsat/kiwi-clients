@@ -3,281 +3,285 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kiwi Sensor Dashboard</title>
-  <link href="https://cdn.jsdelivr.net/npm/gridstack@9.2.0/dist/gridstack.min.css" rel="stylesheet" />
+  <title>Kiwi · Live dashboard</title>
+  <link href="/vendor/gridstack.min.css" rel="stylesheet" />
+  <script>
+    // Apply the saved theme before first paint so there is no flash.
+    try {
+      const root = document.documentElement;
+      root.classList.add(localStorage.getItem('theme') === 'light' ? 'light' : 'dark');
+      if (window.top !== window.self) root.classList.add('inTab');
+    } catch (_) {}
+  </script>
+  <link rel="stylesheet" href="/theme.css" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
-<body>
-  <header>
-    <h1 id="boardName">Kiwi Sensor Dashboard</h1>
-    <p>Live UDP → Rust (Actix) → SSE → Browser · Per-device dashboard · Excel export</p>
-  </header>
+<body class="dark">
+  <header class="appBar">
+    <a class="brand" href="/" target="_top" title="All devices">
+      <span class="brandMark">K</span>
+      <span class="brandName">Kiwi</span>
+    </a>
+    <span class="crumbSep">/</span>
+    <span class="crumb mono" id="boardName">Device</span>
 
-  <main class="wrapSingle">
-    <section class="card scrollCard">
-      <div class="topBar">
-        <div class="row">
-          <button id="pauseBtn" type="button">Pause</button>
-          <button id="recordBtn" type="button">Start Recording</button>
-          <button id="stopBtn" type="button" disabled>Stop</button>
-          <button id="exportBtn" type="button" disabled>Export Excel</button>
-        </div>
+    <span class="statusChip" id="connPill" data-state="warn">
+      <span class="dot" id="connDot"></span>
+      <span id="connText">connecting…</span>
+    </span>
+    <span class="recChip" id="recChip" aria-live="polite">REC <span id="recTimer">00:00</span></span>
 
-        <details class="menu topMenu" id="topMenu">
-          <summary aria-label="Open dashboard menu">☰</summary>
-          <div class="menuBody">
-            <div class="menuSection">
-              <span class="menuSectionTitle">Status</span>
-              <div class="menuStatus">
-                <span class="pill" id="connPill">
-                  <span class="dot" id="connDot"></span>
-                  <span id="connText">connecting…</span>
-                </span>
-                <span class="pill">buffer: <span id="bufCount">0</span>/<span id="bufMax">0</span></span>
-                <span class="pill">reconnects: <span id="reconnects">0</span></span>
-                <span class="pill">last seen: <span id="lastSeen">-</span></span>
-                <span class="pill">recorded samples: <span id="recCount">0</span></span>
-              </div>
-            </div>
+    <span class="appBarSpacer"></span>
 
-            <div class="menuSection">
-              <span class="menuSectionTitle">Streams</span>
-              <details class="menu" id="streamMenu" open>
-                <summary>Streams</summary>
-                <div class="menuBody">
-                  <div class="menuActions">
-                    <button id="selectAllBtn" type="button">Select all</button>
-                    <button id="clearAllBtn" type="button">Clear</button>
-                    <span class="menuHint" id="streamHint">All</span>
-                  </div>
+    <div class="appBarMeta">
+      <div class="meta"><span class="metaLabel">Last packet</span><span class="metaValue mono" id="lastSeen">-</span></div>
+      <div class="meta"><span class="metaLabel">Recorded</span><span class="metaValue mono" id="recCount">0</span></div>
+    </div>
 
-                  <div id="streamChecks" class="checks">
-                    <label class="check"><input type="checkbox" value="accel" checked /> Accelerometer</label>
-                    <label class="check"><input type="checkbox" value="gyro" checked /> Gyroscope</label>
-                    <label class="check"><input type="checkbox" value="mag" checked /> Magnetometer</label>
-                    <label class="check"><input type="checkbox" value="temp" checked /> Temperature</label>
-                    <label class="check"><input type="checkbox" value="pressure" checked /> Pressure</label>
-                    <label class="check"><input type="checkbox" value="altitude" checked /> Altitude</label>
-                  </div>
-
-                  <select id="streamSelect" multiple style="display:none">
-                    <option value="accel" selected>accel</option>
-                    <option value="gyro" selected>gyro</option>
-                    <option value="mag" selected>mag</option>
-                    <option value="temp" selected>temp</option>
-                    <option value="pressure" selected>pressure</option>
-                    <option value="altitude" selected>altitude</option>
-                  </select>
-                </div>
-              </details>
-            </div>
-
-            <div class="menuSection">
-              <span class="menuSectionTitle">Settings</span>
-              <div class="menuSettingsGrid">
-                <label>
-                  Window (sec)
-                  <input id="windowSec" type="number" min="1" max="10" step="1" value="2" />
-                </label>
-
-                <label>
-                  Rate (Hz)
-                  <input id="rateHz" type="number" min="1" max="240" step="1" value="60" />
-                </label>
-
-                <label>
-                  Theme
-                  <select id="themeSelect">
-                    <option value="dark">Dark</option>
-                    <option value="light">Light</option>
-                  </select>
-                </label>
-
-                <label>
-                  Palette
-                  <select id="paletteSelect">
-                    <option value="default">Default</option>
-                    <option value="colorblind">Color-blind safe</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-
-            <div class="menuSection">
-              <span class="menuSectionTitle">Layout</span>
-              <div class="layoutBtns">
-
-                <button class="layoutBtn" id="layoutRows" data-layout="rows">
-                  <svg class="layoutThumb" viewBox="0 0 54 44" fill="none" aria-hidden="true">
-                    <rect x="0"  y="0"  width="25" height="13" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="27" y="0"  width="27" height="13" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="0"  y="16" width="25" height="13" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="27" y="16" width="27" height="13" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="0"  y="32" width="16" height="12" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="19" y="32" width="16" height="12" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="38" y="32" width="16" height="12" rx="2" fill="currentColor" opacity=".3"/>
-                  </svg>
-                  <span class="layoutName">Rows</span>
-                  <span class="layoutApplied">✓ applied</span>
-                </button>
-
-                <button class="layoutBtn" id="layoutFocus" data-layout="focus">
-                  <svg class="layoutThumb" viewBox="0 0 54 44" fill="none" aria-hidden="true">
-                    <rect x="0"  y="0"  width="39" height="13" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="42" y="0"  width="12" height="13" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="0"  y="16" width="39" height="13" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="42" y="16" width="12" height="13" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="0"  y="32" width="39" height="12" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="42" y="32" width="12" height="12" rx="2" fill="currentColor" opacity=".3"/>
-                  </svg>
-                  <span class="layoutName">Focus</span>
-                  <span class="layoutApplied">✓ applied</span>
-                </button>
-
-                <button class="layoutBtn" id="layoutGrid" data-layout="grid">
-                  <svg class="layoutThumb" viewBox="0 0 54 44" fill="none" aria-hidden="true">
-                    <rect x="0"  y="0"  width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="19" y="0"  width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="38" y="0"  width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="0"  y="16" width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="19" y="16" width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="38" y="16" width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="0"  y="32" width="25" height="12" rx="2" fill="currentColor" opacity=".3"/>
-                    <rect x="27" y="32" width="27" height="12" rx="2" fill="currentColor" opacity=".3"/>
-                  </svg>
-                  <span class="layoutName">Grid</span>
-                  <span class="layoutApplied">✓ applied</span>
-                </button>
-
-              </div>
-              <button id="resetLayoutBtn" type="button" style="margin-top:8px;width:100%;">Reset to Default</button>
-            </div>
-
-            <div class="menuSection">
-              <span class="menuSectionTitle">Panels</span>
-              <label class="check"><input type="checkbox" id="liveValuesToggle" /> Show live values panel</label>
-              <label class="check"><input type="checkbox" id="horizonToggle" /> Show attitude indicator</label>
-              <label class="check"><input type="checkbox" id="crosshairToggle" /> Crosshair hover (unified values)</label>
-            </div>
-
-            <div class="menuSection">
-              <span class="menuSectionTitle">Keyboard shortcuts</span>
-              <div class="kbdGrid">
-                <kbd>P</kbd><span>Pause / Resume</span>
-                <kbd>R</kbd><span>Start recording</span>
-                <kbd>S</kbd><span>Stop recording</span>
-                <kbd>E</kbd><span>Export Excel</span>
-                <kbd>M</kbd><span>Toggle menu</span>
-                <kbd>Esc</kbd><span>Close menu</span>
-              </div>
+    <div class="appBarActions">
+      <button id="pauseBtn" type="button" class="btnGhost ico icoPause" title="Pause / resume (P)">Pause</button>
+      <button id="recordBtn" type="button" class="btnDanger ico icoRecord" title="Start recording (R)">Start Recording</button>
+      <button id="stopBtn" type="button" class="ico icoStop" title="Stop recording (S)" disabled>Stop</button>
+      <button id="exportBtn" type="button" class="btnPrimary ico icoExport" title="Export Excel (E)" disabled>Export Excel</button>
+      <details class="menu topMenu" id="topMenu">
+        <summary aria-label="Open dashboard menu" title="Settings">Settings</summary>
+        <div class="menuBody">
+          <div class="menuSection">
+            <span class="menuSectionTitle">Diagnostics</span>
+            <div class="statGrid">
+              <div class="stat">Accel points in window<span class="mono" id="windowPoints">0</span></div>
+              <div class="stat">Reconnects<span class="mono" id="reconnects">0</span></div>
             </div>
           </div>
+
+          <div class="menuSection">
+            <span class="menuSectionTitle">Streams</span>
+            <div class="menuActions">
+              <button id="selectAllBtn" type="button">Select all</button>
+              <button id="clearAllBtn" type="button">Clear</button>
+              <span class="menuHint" id="streamHint">All</span>
+            </div>
+
+            <div id="streamChecks" class="checks">
+              <label class="check"><input type="checkbox" value="accel" checked /> Accelerometer</label>
+              <label class="check"><input type="checkbox" value="gyro" checked /> Gyroscope</label>
+              <label class="check"><input type="checkbox" value="mag" checked /> Magnetometer</label>
+              <label class="check"><input type="checkbox" value="temp" checked /> Temperature</label>
+              <label class="check"><input type="checkbox" value="pressure" checked /> Pressure</label>
+              <label class="check"><input type="checkbox" value="altitude" checked /> Altitude</label>
+            </div>
+          </div>
+
+          <div class="menuSection">
+            <span class="menuSectionTitle">Display</span>
+            <div class="menuSettingsGrid">
+              <label>
+                Time window (s)
+                <input id="windowSec" type="number" min="1" max="10" step="1" value="2" />
+              </label>
+
+              <label>
+                Theme
+                <select id="themeSelect">
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                </select>
+              </label>
+
+              <label>
+                Palette
+                <select id="paletteSelect">
+                  <option value="default">Default</option>
+                  <option value="colorblind">Color-blind safe</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="menuSection">
+            <span class="menuSectionTitle">Layout</span>
+            <div class="layoutBtns">
+
+              <button class="layoutBtn" id="layoutRows" data-layout="rows">
+                <svg class="layoutThumb" viewBox="0 0 54 44" fill="none" aria-hidden="true">
+                  <rect x="0"  y="0"  width="25" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="27" y="0"  width="27" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="0"  y="16" width="25" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="27" y="16" width="27" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="0"  y="32" width="16" height="12" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="19" y="32" width="16" height="12" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="38" y="32" width="16" height="12" rx="2" fill="currentColor" opacity=".3"/>
+                </svg>
+                <span class="layoutName">Rows</span>
+              </button>
+
+              <button class="layoutBtn" id="layoutFocus" data-layout="focus">
+                <svg class="layoutThumb" viewBox="0 0 54 44" fill="none" aria-hidden="true">
+                  <rect x="0"  y="0"  width="39" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="42" y="0"  width="12" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="0"  y="16" width="39" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="42" y="16" width="12" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="0"  y="32" width="39" height="12" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="42" y="32" width="12" height="12" rx="2" fill="currentColor" opacity=".3"/>
+                </svg>
+                <span class="layoutName">Focus</span>
+              </button>
+
+              <button class="layoutBtn" id="layoutGrid" data-layout="grid">
+                <svg class="layoutThumb" viewBox="0 0 54 44" fill="none" aria-hidden="true">
+                  <rect x="0"  y="0"  width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="19" y="0"  width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="38" y="0"  width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="0"  y="16" width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="19" y="16" width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="38" y="16" width="16" height="13" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="0"  y="32" width="25" height="12" rx="2" fill="currentColor" opacity=".3"/>
+                  <rect x="27" y="32" width="27" height="12" rx="2" fill="currentColor" opacity=".3"/>
+                </svg>
+                <span class="layoutName">Grid</span>
+              </button>
+
+            </div>
+            <button id="resetLayoutBtn" type="button">Reset layout</button>
+          </div>
+
+          <div class="menuSection">
+            <span class="menuSectionTitle">Panels</span>
+            <div class="checks">
+              <label class="check"><input type="checkbox" id="liveValuesToggle" /> Live values</label>
+              <label class="check"><input type="checkbox" id="horizonToggle" /> Attitude indicator</label>
+              <label class="check"><input type="checkbox" id="crosshairToggle" /> Crosshair hover</label>
+            </div>
+          </div>
+
+          <div class="menuSection">
+            <span class="menuSectionTitle">Keyboard shortcuts</span>
+            <div class="kbdGrid">
+              <kbd>P</kbd><span>Pause / Resume</span>
+              <kbd>R</kbd><span>Start recording</span>
+              <kbd>S</kbd><span>Stop recording</span>
+              <kbd>E</kbd><span>Export</span>
+              <kbd>M</kbd><span>Settings</span>
+              <kbd>Esc</kbd><span>Close</span>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="kpiRow" aria-label="Latest values">
+      <div class="kpi" style="--kpi-color: var(--c-accel)"><div class="kpiLabel">Acceleration <span class="kpiHint">|R|</span></div><div class="kpiValue"><span class="kpiNum" id="kpi-accel">—</span><span class="kpiUnit">g</span></div><div class="kpiAxes" id="kpi-accel-xyz">x — · y — · z —</div></div>
+      <div class="kpi" style="--kpi-color: var(--c-gyro)"><div class="kpiLabel">Angular rate <span class="kpiHint">|R|</span></div><div class="kpiValue"><span class="kpiNum" id="kpi-gyro">—</span><span class="kpiUnit">°/s</span></div><div class="kpiAxes" id="kpi-gyro-xyz">x — · y — · z —</div></div>
+      <div class="kpi" style="--kpi-color: var(--c-mag)"><div class="kpiLabel">Magnetic field <span class="kpiHint">|R|</span></div><div class="kpiValue"><span class="kpiNum" id="kpi-mag">—</span><span class="kpiUnit">mG</span></div><div class="kpiAxes" id="kpi-mag-xyz">x — · y — · z —</div></div>
+      <div class="kpi" style="--kpi-color: var(--c-temp)"><div class="kpiLabel">Temperature</div><div class="kpiValue"><span class="kpiNum" id="kpi-temp">—</span><span class="kpiUnit">°C</span></div></div>
+      <div class="kpi" style="--kpi-color: var(--c-pressure)"><div class="kpiLabel">Pressure</div><div class="kpiValue"><span class="kpiNum" id="kpi-pressure">—</span><span class="kpiUnit">hPa</span></div></div>
+      <div class="kpi" style="--kpi-color: var(--c-altitude)"><div class="kpiLabel">Altitude</div><div class="kpiValue"><span class="kpiNum" id="kpi-altitude">—</span><span class="kpiUnit">m</span></div></div>
+    </section>
+
+    <div id="dashboardGrid" class="dashboardGrid">
+      <!-- Row 1 (y=0, h=4): Accel + Gyro fill all 12 cols -->
+      <div class="dashboardPanel" id="panel-accel" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340" data-default-x="0" data-default-y="0">
+        <details class="plotDetails" open data-stream="accel">
+          <summary>Accelerometer <span class="unitTag">g</span></summary>
+          <div class="plotWrap"><div id="accelPlot"></div></div>
         </details>
       </div>
 
-      <div id="dashboardGrid" class="dashboardGrid">
-        <!-- Row 1 (y=0, h=4): Accel + Gyro fill all 12 cols -->
-        <div class="dashboardPanel" id="panel-accel" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340" data-default-x="0" data-default-y="0">
-          <details class="plotDetails" open data-stream="accel">
-            <summary>Accelerometer (X, Y, Z)</summary>
-            <div class="plotWrap"><div id="accelPlot"></div></div>
-          </details>
-        </div>
+      <div class="dashboardPanel" id="panel-gyro" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340" data-default-x="6" data-default-y="0">
+        <details class="plotDetails" open data-stream="gyro">
+          <summary>Gyroscope <span class="unitTag">°/s</span></summary>
+          <div class="plotWrap"><div id="gyroPlot"></div></div>
+        </details>
+      </div>
 
-        <div class="dashboardPanel" id="panel-gyro" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340" data-default-x="6" data-default-y="0">
-          <details class="plotDetails" open data-stream="gyro">
-            <summary>Gyroscope (X, Y, Z)</summary>
-            <div class="plotWrap"><div id="gyroPlot"></div></div>
-          </details>
-        </div>
+      <!-- Row 2 (y=4, h=4): Mag + 3D fill all 12 cols -->
+      <div class="dashboardPanel" id="panel-mag" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340" data-default-x="0" data-default-y="4">
+        <details class="plotDetails" open data-stream="mag">
+          <summary>Magnetometer <span class="unitTag">mG</span></summary>
+          <div class="plotWrap"><div id="magPlot"></div></div>
+        </details>
+      </div>
 
-        <!-- Row 2 (y=4, h=4): Mag + 3D fill all 12 cols -->
-        <div class="dashboardPanel" id="panel-mag" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340" data-default-x="0" data-default-y="4">
-          <details class="plotDetails" open data-stream="mag">
-            <summary>Magnetometer (X, Y, Z)</summary>
-            <div class="plotWrap"><div id="magPlot"></div></div>
-          </details>
-        </div>
+      <!-- Row 3 (y=8, h=3): Temp + Pressure + Altitude fill all 12 cols -->
+      <div class="dashboardPanel" id="panel-temp" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300" data-default-x="0" data-default-y="8">
+        <details class="plotDetails" open data-stream="temp">
+          <summary>Temperature <span class="unitTag">°C</span></summary>
+          <div class="plotWrap"><div id="tempPlot"></div></div>
+        </details>
+      </div>
 
-        <!-- Row 3 (y=8, h=3): Temp + Pressure + Altitude fill all 12 cols -->
-        <div class="dashboardPanel" id="panel-temp" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300" data-default-x="0" data-default-y="8">
-          <details class="plotDetails" open data-stream="temp">
-            <summary>Temperature</summary>
-            <div class="plotWrap"><div id="tempPlot"></div></div>
-          </details>
-        </div>
+      <div class="dashboardPanel" id="panel-pressure" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300" data-default-x="4" data-default-y="8">
+        <details class="plotDetails" open data-stream="pressure">
+          <summary>Pressure <span class="unitTag">hPa</span></summary>
+          <div class="plotWrap"><div id="pressurePlot"></div></div>
+        </details>
+      </div>
 
-        <div class="dashboardPanel" id="panel-pressure" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300" data-default-x="4" data-default-y="8">
-          <details class="plotDetails" open data-stream="pressure">
-            <summary>Pressure</summary>
-            <div class="plotWrap"><div id="pressurePlot"></div></div>
-          </details>
-        </div>
+      <div class="dashboardPanel" id="panel-altitude" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300" data-default-x="8" data-default-y="8">
+        <details class="plotDetails" open data-stream="altitude">
+          <summary>Altitude <span class="unitTag">m</span></summary>
+          <div class="plotWrap"><div id="altitudePlot"></div></div>
+        </details>
+      </div>
 
-        <div class="dashboardPanel" id="panel-altitude" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="300" data-default-x="8" data-default-y="8">
-          <details class="plotDetails" open data-stream="altitude">
-            <summary>Altitude</summary>
-            <div class="plotWrap"><div id="altitudePlot"></div></div>
-          </details>
-        </div>
-
-        <!-- 3D view sits beside Mag in row 2, same 6-col width -->
-        <div class="dashboardPanel" id="panel-3d" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340" data-default-x="6" data-default-y="4">
-          <div class="panelBlock">
-            <div class="btnRow" style="margin-bottom:10px;">
-              <button id="open3dBtn" type="button">Open 3D View</button>
-            </div>
-
-            <div id="imu3dWrap">
-              <iframe
-                id="imu3dFrame"
-                title="3D IMU View"
-                src="/3d/?embed=1"
-                allow="fullscreen"
-              ></iframe>
-            </div>
+      <!-- 3D view sits beside Mag in row 2, same 6-col width -->
+      <div class="dashboardPanel" id="panel-3d" data-default-cols="6" data-min-cols="3" data-max-cols="12" data-default-height="340" data-default-x="6" data-default-y="4">
+        <div class="panelBlock">
+          <div class="panelHead">Orientation
+            <button id="open3dBtn" type="button" class="btnGhost ico icoCube">Full screen</button>
           </div>
-        </div>
 
-        <!-- Widget: Attitude Indicator — canvas-based roll/pitch from accel -->
-        <div class="dashboardPanel" id="panel-horizon" data-default-cols="4" data-min-cols="3" data-max-cols="6" data-default-height="340" style="display:none;">
-          <div class="panelBlock">
-            <div class="widgetTitle">Attitude Indicator</div>
-            <div class="horizonWrap">
-              <canvas id="horizonCanvas"></canvas>
-            </div>
-            <div class="horizonReadout">
-              <span class="horizonLabel">Roll</span>
-              <span class="mono horizonVal" id="horizonRoll">—</span>
-              <span class="horizonSep"></span>
-              <span class="horizonLabel">Pitch</span>
-              <span class="mono horizonVal" id="horizonPitch">—</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="dashboardPanel" id="panel-values" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="320" style="display:none;">
-          <div class="panelBlock">
-            <details class="miniDetails" id="dialStats" open>
-              <summary>Live values</summary>
-              <div class="kvs">
-                <div class="kv"><span>time</span><span class="mono" id="t">-</span></div>
-                <div class="kv"><span>x</span><span class="mono" id="x">-</span></div>
-                <div class="kv"><span>y</span><span class="mono" id="y">-</span></div>
-                <div class="kv"><span>z</span><span class="mono" id="z">-</span></div>
-                <div class="kv"><span>magnitude</span><span class="mono" id="mag">-</span></div>
-                <div class="kv"><span>theta (deg)</span><span class="mono" id="theta">-</span></div>
-                <div class="kv"><span>phi (deg)</span><span class="mono" id="phi">-</span></div>
-              </div>
-            </details>
+          <div id="imu3dWrap">
+            <iframe
+              id="imu3dFrame"
+              title="3D IMU View"
+              src="about:blank"
+              allow="fullscreen"
+            ></iframe>
           </div>
         </div>
       </div>
-    </section>
-  </main>
 
-  <script src="./plotly-2.27.0.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/gridstack@9.2.0/dist/gridstack-all.min.js"></script>
-  <script src="/plot.js"></script>
+      <!-- Widget: Attitude Indicator — canvas-based roll/pitch from accel -->
+      <div class="dashboardPanel" id="panel-horizon" data-default-cols="4" data-min-cols="3" data-max-cols="6" data-default-height="340" style="display:none;">
+        <div class="panelBlock">
+          <div class="panelHead">Attitude indicator</div>
+          <div class="horizonWrap">
+            <canvas id="horizonCanvas"></canvas>
+          </div>
+          <div class="horizonReadout">
+            <span class="horizonLabel">Roll</span>
+            <span class="mono horizonVal" id="horizonRoll">—</span>
+            <span class="horizonSep"></span>
+            <span class="horizonLabel">Pitch</span>
+            <span class="mono horizonVal" id="horizonPitch">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboardPanel" id="panel-values" data-default-cols="4" data-min-cols="3" data-max-cols="8" data-default-height="320" style="display:none;">
+        <div class="panelBlock">
+          <details class="miniDetails" id="dialStats" open>
+            <summary>Live values · accelerometer</summary>
+            <div class="kvs">
+              <div class="kv"><span>time</span><span class="mono" id="t">-</span></div>
+              <div class="kv"><span>x</span><span class="mono" id="x">-</span></div>
+              <div class="kv"><span>y</span><span class="mono" id="y">-</span></div>
+              <div class="kv"><span>z</span><span class="mono" id="z">-</span></div>
+              <div class="kv"><span>magnitude</span><span class="mono" id="mag">-</span></div>
+              <div class="kv"><span>theta (deg)</span><span class="mono" id="theta">-</span></div>
+              <div class="kv"><span>phi (deg)</span><span class="mono" id="phi">-</span></div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+</main>
+
+<script src="/plotly-2.27.0.min.js"></script>
+<script src="/vendor/gridstack-all.js"></script>
+<script type="module" src="/plot.js"></script>
 </body>
 </html>
