@@ -1,20 +1,20 @@
 from __future__ import annotations
-from datetime import datetime
-from pathlib import Path
+
+import queue
 import socket
-import struct
-from time import perf_counter_ns
-from multiprocessing import Queue, Process, Event
-from threading import Thread
-from typing import Any, Optional, Tuple
 from dataclasses import dataclass
+from multiprocessing import Event, Process, Queue
+from pathlib import Path
+from typing import Any, Optional
+
+from datarate import DataRate
+from decoder import DataBuffer, decode_packet
 from plot import SaveKind, draw_loop
 
-from pandas import DataFrame
-
-from decoder import DataBuffer, SINGLE_MEASUREMENT_SIZE, decode_packet
-
-# %%
+# A plot process gets this long to finish its recording file after Ctrl-C.
+CHILD_EXIT_TIMEOUT_S = 10
+# Longest the receive loop waits for a packet before checking for Ctrl-C and closed windows.
+RECV_TIMEOUT_S = 0.5
 
 
 @dataclass
@@ -23,52 +23,13 @@ class Client:
     gyro: DataBuffer
     mag: DataBuffer
     baro: DataBuffer
-    request: Queue  # Plot thread requests data: Queue[int]
-    # UDP thread sends data: Queue[Tuple[DataFrame, DataFrame, DataFrame, DataFrame]]
-    response: Queue
-    info: Queue  # UDP thread sends info: Queue[Tuple[float, str, float, str]]
-    shutdown: Any  # Plot thread signals window closed: Event
+    request: Queue  # Plot process asks for data: Queue[int]
+    response: Queue  # UDP loop sends (accel, gyro, mag, baro) DataFrames
+    info: Queue  # UDP loop sends data-rate info: (bitrate, unit, packetrate, unit)
+    shutdown: Any  # Plot process signals its window closed: Event
+    process: Process
     datarate: DataRate
-    last: int = perf_counter_ns()
-
-
-class DataRate:
-    def __init__(self, update_rate: float = 2.0):
-        self.bytecount = 0
-        self.count = 0
-        self.last = None  # Last timestamp for calculating data rate
-        self.update_rate = update_rate
-        self.start = perf_counter_ns()
-
-    def update(self, num_samples: int = 1) -> Optional[Tuple[float, str, float, str]]:
-        now = perf_counter_ns()
-        self.bytecount += num_samples
-        self.count += 1
-        if self.last is None:
-            self.last = now
-            return
-        elapsed = (now - self.last) / 1e9
-        if elapsed > self.update_rate:  # Update every second
-            datarate = self.bytecount * 8 / elapsed
-            packrate = self.count / elapsed
-            packunit = 'packets/s'
-            self.last = now
-            self.bytecount = 0
-            self.count = 0
-            dataunit = 'bps'
-            if datarate > 1024:
-                datarate /= 1024
-                dataunit = 'Kbps'
-            elif datarate > 1024*1024:
-                datarate /= 1024*1024
-                dataunit = 'Mbps'
-            if packrate > 1000:
-                packrate /= 1000
-                packunit = 'Kpackets/s'
-            return (datarate, dataunit, packrate, packunit)
-
-        return None
-# %% UDP server loop
+    last_tstamp: Optional[int] = None  # Last device timestamp (µs since boot)
 
 
 def udp_loop(
@@ -77,9 +38,8 @@ def udp_loop(
     datapath: Path = Path.cwd() / 'data',
     savekind: SaveKind = 'excel',
     winsize: int = 2000,
-    frametime: int = int(1e9 / 2)
 ):
-    """UDP client loop.
+    """Receive packets and give each board (by IP) its own plot window process.
 
     Args:
         host (str): Address to bind to.
@@ -88,97 +48,103 @@ def udp_loop(
         savekind (SaveKind, optional): Kind of data storage: 'excel' or 'netcdf'. Defaults to 'excel'.
         winsize (int, optional): Window size in milliseconds for displaying data. Defaults to 2000.
     """
-    # Dictionary of clients
-    clients: dict[Any, Client] = {}
-    # Dictionary of plot processes
-    threads: dict[Any, Process] = {}
-    # Set of disconnected clients
-    closed: set = set()
-    # Create UDP socket
+    clients: dict[str, Client] = {}
+    closed: set[str] = set()  # boards whose window the user closed
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind((host, port))  # Bind to address and port
+    sock.bind((host, port))
+    # Wake up regularly: a blocking receive cannot be interrupted by Ctrl-C on
+    # Windows, and closed windows must be noticed even when no packets arrive.
+    sock.settimeout(RECV_TIMEOUT_S)
     print(f"[UDP] Listening for UDP packets on {host}:{port}")
 
-    while True:  # Main event loop
-        # Try to receive UDP packet
-        try:
-            temp, loc = sock.recvfrom(SINGLE_MEASUREMENT_SIZE)
-            # New client connected
-            if loc not in clients and loc not in closed:
-                # Create queues and event to communicate with plot thread for client
-                request = Queue(maxsize=1)
-                response = Queue()
-                info = Queue()
-                shutdown = Event()
-                client = Client(
-                    DataBuffer(maxlen=winsize),
-                    DataBuffer(maxlen=winsize),
-                    DataBuffer(maxlen=winsize),
-                    DataBuffer(maxlen=winsize),
-                    request,
-                    response,
-                    info,
-                    shutdown,
-                    DataRate(update_rate=1.0)
-                )
-                # Start plot thread for client
-                proc = Process(None, draw_loop, args=(
-                    loc, request, response, info, shutdown, datapath, savekind, winsize))
-                proc.start()
-                threads[loc] = proc
+    try:
+        while True:
+            try:
+                # Larger than one packet so an oversized datagram is rejected by
+                # decode_packet's length check instead of raising on Windows.
+                packet, addr = sock.recvfrom(2048)
+            except TimeoutError:
+                packet = None
+            except OSError as e:
+                print(f"[UDP] Receive error: {e}")
+                continue
+            if reap_closed(clients, closed):
+                print("[UDP] All clients disconnected, exiting")
+                break
+            if packet is None:
+                continue
+            # A board is identified by its IP; the source port changes on reboot.
+            loc = addr[0]
+            if loc in closed:
+                continue
+            client = clients.get(loc)
+            if client is None:
+                client = start_client(loc, datapath, savekind, winsize)
                 clients[loc] = client
-                print(f"[UDP] New client connected: {loc[0]}:{loc[1]}")
-        except KeyboardInterrupt:
-            print("[UDP] Interrupted by user")
-            sock.close()
-            break
-        except Exception as e:
-            print(f"[UDP] Connection lost: {e}")
-            continue
-        # Process received packet
-        try:
-            client = clients[loc]  # Retrieve the client communication objects
-            info = client.datarate.update(len(temp))  # Update data rate
-            if info is not None:  # Send data rate info to plot thread
-                client.info.put_nowait(info)
-            # Decode the packet and store data in buffers
-            decode_packet(
-                temp,
-                client.accel, client.gyro,
-                client.mag, client.baro
-            )
-            # Handle client disconnection
-            if client.shutdown.is_set():
-                clients.pop(loc)
-                threads.pop(loc).join()
-                closed.add(loc)
-                print(f"[UDP] Client {loc[0]}:{loc[1]} disconnected")
-                if len(clients) == 0:
-                    print("[UDP] All clients disconnected, exiting")
-                    sock.close()
-                    break
-            # Handle data request from plot thread
-            # elif (perf_counter_ns() - client.last) > frametime:
-            #     client.last = perf_counter_ns()
-            elif client.request.get_nowait() is not None:
-                # Prepare dataframes and send to plot thread
-                accel = client.accel.to_dataframe(
-                    ['tstamp', 'x', 'y', 'z']
-                )
-                gyro = client.gyro.to_dataframe(['tstamp', 'x', 'y', 'z'])
-                mag = client.mag.to_dataframe(['tstamp', 'x', 'y', 'z'])
-                baro = client.baro.to_dataframe(
-                    ('tstamp', 'temperature', 'pressure', 'altitude')
-                )
-                client.response.put_nowait((accel, gyro, mag, baro))
-        except struct.error as e:
-            # type: ignore
-            print(
-                f"[UDP] Error unpacking data: {e}, received data ({len(temp)}): {temp}")
-            continue
-        except Exception as e:
-            pass
-        except KeyboardInterrupt:
-            print("[UDP] Interrupted by user")
-            sock.close()
-            break
+                print(f"[UDP] New client connected: {loc}")
+
+            rate = client.datarate.update(len(packet))
+            if rate is not None:
+                client.info.put_nowait(rate)
+            tstamp = decode_packet(packet, client.accel, client.gyro, client.mag, client.baro)
+            # The board rebooted if its µs clock jumped back by over a second:
+            # drop the old session so plots do not mix two timelines.
+            if tstamp is not None:
+                if client.last_tstamp is not None and tstamp < client.last_tstamp - 1_000_000:
+                    print(f"[UDP] Client {loc} restarted, clearing buffers")
+                    for buf in (client.accel, client.gyro, client.mag, client.baro):
+                        buf.clear()
+                client.last_tstamp = tstamp
+
+            # Answer a pending data request from the plot process.
+            try:
+                client.request.get_nowait()
+            except queue.Empty:
+                continue
+            client.response.put_nowait((
+                client.accel.to_dataframe(['tstamp', 'x', 'y', 'z']),
+                client.gyro.to_dataframe(['tstamp', 'x', 'y', 'z']),
+                client.mag.to_dataframe(['tstamp', 'x', 'y', 'z']),
+                client.baro.to_dataframe(['tstamp', 'temperature', 'pressure', 'altitude']),
+            ))
+    except KeyboardInterrupt:
+        print("[UDP] Interrupted by user")
+    finally:
+        sock.close()
+        stop_clients(clients.values())
+
+
+def reap_closed(clients: dict[str, Client], closed: set[str]) -> bool:
+    """Forget boards whose window the user closed; True once the last one is gone."""
+    done = [loc for loc, client in clients.items() if client.shutdown.is_set()]
+    for loc in done:
+        clients.pop(loc).process.join()
+        closed.add(loc)
+        print(f"[UDP] Client {loc} disconnected")
+    return bool(done) and not clients
+
+
+def start_client(loc: str, datapath: Path, savekind: SaveKind, winsize: int) -> Client:
+    request, response, info, shutdown = Queue(maxsize=1), Queue(), Queue(), Event()
+    # Data this process sends may never be read if the plot process is gone;
+    # do not let unsent data block this process from exiting.
+    response.cancel_join_thread()
+    info.cancel_join_thread()
+    process = Process(target=draw_loop, args=(
+        loc, request, response, info, shutdown, datapath, savekind, winsize))
+    process.start()
+    return Client(
+        DataBuffer(maxlen=winsize), DataBuffer(maxlen=winsize),
+        DataBuffer(maxlen=winsize), DataBuffer(maxlen=winsize),
+        request, response, info, shutdown, process, DataRate(update_rate=1.0),
+    )
+
+
+def stop_clients(clients) -> None:
+    """Wait for plot processes to close their windows and recordings; stop stragglers."""
+    for client in clients:
+        client.process.join(timeout=CHILD_EXIT_TIMEOUT_S)
+        if client.process.is_alive():
+            print(f"[UDP] Plot process {client.process.pid} did not exit; terminating")
+            client.process.terminate()
+            client.process.join()

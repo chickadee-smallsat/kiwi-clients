@@ -1,26 +1,23 @@
 # %%
+from contextlib import suppress
 from datetime import datetime
+import os
 from pathlib import Path
-from queue import Empty
+from queue import Empty, Full
+import signal
 from typing import Any, Literal
 import matplotlib
-from time import perf_counter_ns, sleep as nanosleep
-from matplotlib.axes import Axes
+from time import perf_counter_ns
 from matplotlib.gridspec import GridSpec
 import numpy as np
 import pandas as pd
-import matplotlib
 import matplotlib.pyplot as plt
-from multiprocessing import Queue, Event
-from decoder import xyz_to_rtp
-import warnings
+from multiprocessing import Queue
+from decoder import latest_timestamp, xyz_to_rtp
 
-from storesystem import StoreSystem
 from nc_thread import NcDataset
 from xlsx_thread import XlsxDataset
 
-# Ignore matplotlib warnings
-warnings.filterwarnings("ignore", category=RuntimeWarning)
 matplotlib.rcParams.update({'mathtext.fontset': 'cm'})
 matplotlib.rc(
     'font',
@@ -28,7 +25,10 @@ matplotlib.rc(
     serif=['Times New Roman'],
 )
 
-matplotlib.use('QtAgg')  # Use TkAgg backend for interactive plotting
+# Qt backend (pyside6) for the interactive window, unless MPLBACKEND says otherwise
+# (the tests run headless with MPLBACKEND=Agg).
+if 'MPLBACKEND' not in os.environ:
+    matplotlib.use('QtAgg')
 
 # %%
 SaveKind = Literal['excel', 'netcdf']
@@ -56,25 +56,23 @@ def draw_loop(
         datapath: Path = Path.cwd() / 'data',
         savekind: SaveKind = 'netcdf',
         winsize: int = 1000,
-        frametime: int = int(1e9 / 1)
     ):
     """A drawing loop that requests data from the UDP server :func:`udp_loop`
     and plots the data in real-time.
 
     Args:
-        source (Any): UDP source address (ip, port)
+        source (Any): Device IP address
         request (Queue): Request data from UDP server by putting any value in this queue
         response (Queue): Response from UDP server: tuple of DataFrames (accel, gyro, mag, baro)
-        info (Queue): Info queue from UDP server: (source: (ip, port), datetime, bitrate, byteunit, packrate, packunit)
+        info (Queue): Info queue from UDP server: (source: ip, datetime, bitrate, byteunit, packrate, packunit)
         shutdown (Event): Signal to UDP server that the drawing loop is shutting down
         datapath (Path, optional): Path to store NetCDF files. Defaults to current working directory / 'data'.
         savekind (SaveKind, optional): Kind of file to save data. Defaults to 'netcdf'.
         winsize (int, optional): Window size in milliseconds for displaying data. Defaults to 1000.
-        frametime (int, optional): Frame time in nanoseconds for limiting FPS. Defaults to 100_000_000 (10 FPS).
     """
     # The UDP source address
-    ip, port = source
-    # Turn off interactie mode for dynamic plotting
+    ip = source
+    # Turn off interactive mode for dynamic plotting
     plt.ioff()
     # The grid layout for the subplots
     # ___________________________
@@ -101,9 +99,7 @@ def draw_loop(
     START = 2 # Start row for plots
     fig = plt.figure(figsize=(FIG_WID, FIG_HEI), dpi=DPI, animated=True)
     # Set window title
-    fig.canvas.manager.set_window_title(  # type: ignore
-        # type: ignore
-        f'Kiwi Mainboard Sensor Data ({source[0]}:{source[1]})')
+    fig.canvas.manager.set_window_title(f'Kiwi Mainboard Sensor Data ({ip})')  # type: ignore
     fig.suptitle('Kiwi Mainboard Sensor Data', fontsize=16, fontweight='bold')
     fignum = fig.number
     # Display FPS and data rate here
@@ -127,10 +123,7 @@ def draw_loop(
     axs = []
     # Create accel, gyro, mag axes
     for i in range(3):
-        if i == 0:
-            ax = fig.add_subplot(grid[i+START, :4])
-        else:
-            ax = fig.add_subplot(grid[i+START, :4], sharex=axs[0])
+        ax = fig.add_subplot(grid[i+START, :4], sharex=axs[0] if axs else None)
         ax.autoscale(enable=True, axis='y')
         axs.append(ax)
     axs = np.asarray(axs)
@@ -178,9 +171,7 @@ def draw_loop(
     fig.subplots_adjust()
 
     # Turn off x tick labels for all but the bottom plot
-    for (ax, title, unit) in zip(axs, ('Acceleration', 'ω', 'Magnetic Field'), ('g', '°/s', 'μT')):
-        ax: Axes = ax
-        # ax.set_title(title, fontsize=10, fontweight='bold')
+    for ax, unit in zip(axs, ('g', '°/s', 'mG'), strict=True):
         ax.set_ylabel(unit, fontsize=12)
         ax.tick_params(axis='x', which='both', labelbottom=False)
 
@@ -230,88 +221,66 @@ def draw_loop(
     fig.canvas.draw()
     fig.canvas.flush_events()
 
-    last = perf_counter_ns() # last time we printed info
-    loop_count = 0 # Number of loops since last info print
-    rq_time = 0 # Total request-response time since last info print
-    rq_start = perf_counter_ns() # Initialize to avoid uninitialized variable
+    last = perf_counter_ns()  # last time we printed info
+    loop_count = 0  # Number of loops since last info print
+    rq_time = 0  # Total request-response time since last info print
 
-    loop_prev = perf_counter_ns()  # Top of the loop
-    while True: # Main loop
-        loop_now = perf_counter_ns()
-        loop_dt = loop_now - loop_prev
-        loop_prev = loop_now
-        # Sleep to limit to ~10 FPS
-        # if loop_dt < frametime:  # 10 FPS
-        #     sleep_time = (frametime - loop_dt) / 1e9
-        #     try:
-        #         plt.pause(sleep_time)
-        #     except KeyboardInterrupt:
-        #         print(f"[{ip}:{port}] Interrupted by user")
-        #         plt.close('all')
-        #         exit(0)
-        # Redraw the figure
-        try:
+    # Ctrl-C usually lands while Qt is running a callback, and Qt swallows the
+    # KeyboardInterrupt raised there. Record it instead and stop on the next pass.
+    interrupted = False
+
+    def on_sigint(*_):
+        nonlocal interrupted
+        interrupted = True
+
+    previous_sigint = signal.signal(signal.SIGINT, on_sigint)
+
+    try:
+        while True:  # Main loop
             fig.canvas.draw_idle()
             fig.canvas.flush_events()
-        except KeyboardInterrupt:
-            print(f"[{ip}:{port}] Interrupted by user")
-            plt.close('all')
-            exit(0)
-        # Check if the figure has been closed
-        if fignum not in plt.get_fignums():
-            break
-        # Try to get new data
-        try:
-            df = None
-            # Request new data if the request queue is empty
-            # The request queue is size 1, so if UDP is not ready with new data,
-            # we skip this iteration.
-            # Note: This condition does not happen since a window is spawned
-            # when a client connects, and the window is closed when the client disconnects.
-            if not request.full():
-                # rq_start = perf_counter_ns() # Start time of request
+            if interrupted:
+                print(f"[{ip}] Interrupted by user")
+                break
+            # Stop when the window has been closed
+            if fignum not in plt.get_fignums():
+                break
+            # Ask the UDP loop for the latest window (the request queue holds one request).
+            with suppress(Full):  # a request is already pending
                 request.put_nowait(1)
-            rq_start = perf_counter_ns() # Start time of request
-            df = response.get(timeout=1.0)
-            rq_end = perf_counter_ns() # End time of response
-            if df is None:
-                continue
-            # Probably received the correct data, which is four dataframes
-            datastor.update(df)
+            rq_start = perf_counter_ns()
             try:
-                acceldf, gyrodf, magdf, barodf = df
-            except ValueError:
-                print(f"Invalid data received: {df}")
+                frames = response.get(timeout=1.0)
+            except Empty:
+                continue  # no packets from this board in the last second
+            except InterruptedError:
+                continue  # Ctrl-C during the wait (Windows); handled at the top of the loop
+            rq_end = perf_counter_ns()
+            datastor.update(frames)
+            acceldf, gyrodf, magdf, barodf = frames
+            # Plot relative to the newest sample of whichever sensors have data.
+            now = latest_timestamp(acceldf, gyrodf, magdf, barodf)
+            if now is None:
                 continue
-            # Use the last timestamp to synchronize different sensors
-            now = acceldf['tstamp'].iloc[-1]
             # Process the 3-axis sensor data
-            for aid, (lline, ax, df) in enumerate(zip(lines, axs, (acceldf, gyrodf, magdf))):
-                # The lines: X, Y, Z, R
-                lline: list = lline
-                # The axis
-                ax: Axes = ax
+            for aid, (lline, ax, df) in enumerate(zip(lines, axs, (acceldf, gyrodf, magdf), strict=True)):
                 # Select data between now and now - window size
                 sel = get_sel(df, now, winsize)
-                # Raw selection
-                tstamp = df['tstamp'][sel]
-                tstamp *= 1e-6  # Convert to s
-                lline[0].set_data(tstamp, df['x'][sel]) # Plot X
-                lline[1].set_data(tstamp, df['y'][sel]) # Plot Y
-                lline[2].set_data(tstamp, df['z'][sel]) # Plot Z
+                tstamp = df['tstamp'][sel] * 1e-6  # µs -> s
+                lline[0].set_data(tstamp, df['x'][sel])  # Plot X
+                lline[1].set_data(tstamp, df['y'][sel])  # Plot Y
+                lline[2].set_data(tstamp, df['z'][sel])  # Plot Z
                 # Compute |R|, θ, φ
                 r, t, p = xyz_to_rtp(
                     df['x'][sel].to_numpy(),
                     df['y'][sel].to_numpy(),
                     df['z'][sel].to_numpy()
                 )
-                # Plot |R|
-                lline[3].set_data(tstamp, r)
-                # Update polar plots
+                lline[3].set_data(tstamp, r)  # Plot |R|
+                # Update polar plots from the newest sample
                 if len(r) > 0:
-                    # Use only the last data point
-                    t = t[-1] # theta
-                    p = p[-1] # phi
+                    t = t[-1]  # theta
+                    p = p[-1]  # phi
                     if aid == 0:  # accel
                         accel_line.set_data([t, t], [0, 1])
                     elif aid == 2:  # mag
@@ -319,50 +288,40 @@ def draw_loop(
                         mag_phi_line.set_data([p, p], [0, 1])
                         magphi_tx.set_text(
                             f'Azimuthal Angle (φ): {np.degrees(p):.1f}°')
-                ax.relim() # Recompute limits
-                ax.autoscale_view() # Autoscale
+                ax.relim()  # Recompute limits
+                ax.autoscale_view()  # Autoscale
             # Process barometer data
             sel = get_sel(barodf, now, winsize)
-            tstamp = barodf['tstamp'][sel]
-            tstamp *= 1e-6  # Convert to s
-            temp_line.set_data(tstamp, barodf['temperature'][sel]) # Temperature
-            pres_line.set_data(tstamp, barodf['pressure'][sel]) # Pressure
-            alt_line.set_data(tstamp, barodf['altitude'][sel]) # Altitude
-            temp_ax.relim() # Recompute limits
-            temp_ax.autoscale_view() # Autoscale
-            pres_ax.relim() # Recompute limits
-            pres_ax.autoscale_view() # Autoscale
-            alt_ax.relim() # Recompute limits
-            alt_ax.autoscale_view() # Autoscale
+            tstamp = barodf['tstamp'][sel] * 1e-6  # µs -> s
+            temp_line.set_data(tstamp, barodf['temperature'][sel])  # Temperature
+            pres_line.set_data(tstamp, barodf['pressure'][sel])  # Pressure
+            alt_line.set_data(tstamp, barodf['altitude'][sel])  # Altitude
+            for axis in (temp_ax, pres_ax, alt_ax):
+                axis.relim()
+                axis.autoscale_view()
             # Update x limits
             alt_ax.set_xlim(now*1e-6-winsize*1e-3, now*1e-6)
-            loop_count += 1 # Increment loop count
-            rq_time += rq_end - rq_start # Accumulate request-response time
-            now = perf_counter_ns() # Current time after drawing stuff, getting data, processing data and updating plots
-            dinfo = info.get_nowait() # Get info from UDP thread
-            if dinfo is not None: # If info is available, print it (and other stats)
-                loop_time = (now - last) / loop_count # Average loop time in ns
-                rq_time = rq_time / loop_count / 1e6 # Average request-response time in ms
-                loop_count = 0 # Reset loop count
-                last = now # Reset last time
-                # Info from UDP thread
-                brate, bunit, prate, punit = dinfo
-                # Render the text
-                outtxt = f"FPS: {1e9/loop_time:.2f}, UDP Rate: {brate:.2f} {bunit} ({prate:.2f} {punit}), Req-Res Time: {rq_time:.2f} ms"
-                # Print to console
-                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                print(f"[{now}] Source: {ip}:{port}, {outtxt}")
-                # Update the text in the figure
-                curtime.set_text(outtxt.replace(', ', '\n'))
-                rq_time = 0 # Reset request-response time
-            
-        except Empty: # No response from UDP thread
-            continue
-        except KeyboardInterrupt: # Interrupted by user
-            print(f"[{ip}:{port}] Interrupted by user")
-            plt.close('all')
-            exit(0)
-    
-    shutdown.set()
-    datastor.close()
-    print(f"[{ip}:{port}] Done receiving data")
+            loop_count += 1
+            rq_time += rq_end - rq_start
+            # Print stats whenever the UDP loop reports a new data rate
+            try:
+                brate, bunit, prate, punit = info.get_nowait()
+            except Empty:
+                continue
+            tick = perf_counter_ns()
+            loop_time = (tick - last) / loop_count  # Average loop time in ns
+            rq_ms = rq_time / loop_count / 1e6  # Average request-response time in ms
+            loop_count = 0
+            rq_time = 0
+            last = tick
+            outtxt = f"FPS: {1e9/loop_time:.2f}, UDP Rate: {brate:.2f} {bunit} ({prate:.2f} {punit}), Req-Res Time: {rq_ms:.2f} ms"
+            stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{stamp}] Source: {ip}, {outtxt}")
+            curtime.set_text(outtxt.replace(', ', '\n'))
+    finally:
+        signal.signal(signal.SIGINT, previous_sigint)
+        # Always tell the UDP loop and finish the recording file, however we exit.
+        plt.close('all')
+        shutdown.set()
+        datastor.close()
+        print(f"[{ip}] Done receiving data")

@@ -1,0 +1,15 @@
+# `ruff check python-client` — pyflakes, bugbear, pyupgrade, simplify, pylint.
+target-version = "py313"
+line-length = 120
+
+[lint]
+select = ["F", "E9", "B", "UP", "SIM", "PL"]
+ignore = [
+  "PLR0912", "PLR0913", "PLR0915", "PLR0917", "PLR2004",  # size/complexity heuristics
+  "B008",                                                 # Path.cwd() defaults are intentional CLI defaults
+  "UP006", "UP007", "UP035", "UP045",                     # keep typing.List/Optional style used throughout
+]
+
+[lint.per-file-ignores]
+# Optional-dependency tests import inside the test after pytest.importorskip.
+"tests/*" = ["PLC0415"]

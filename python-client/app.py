@@ -20,7 +20,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         '--savekind', type=str, choices=['excel', 'netcdf'], default='excel',
-        help='Kind of data storage: excel or netcdf (default: netcdf)'
+        help='Kind of data storage: excel or netcdf (default: excel)'
     )
     args = parser.parse_args()
     winsize = args.window*1000

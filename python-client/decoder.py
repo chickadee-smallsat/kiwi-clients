@@ -19,7 +19,6 @@ SINGLE_MEASUREMENT_SIZE = 24  # measurement
 ACCEL_CODE = 0xACC1
 GYRO_CODE = 0x6E50
 MAG_CODE = 0x9A61
-TEMP_CODE = 0x7E70
 BARO_CODE = 0xB480
 # %% Storage data structures
 
@@ -64,37 +63,30 @@ def decode_packet(measurement: bytes, accel: DataBuffer, gyro: DataBuffer, mag: 
     if calc_crc != crc:
         logger.warning(
             f"[UDP] Skipping measurement with invalid CRC (expected {crc:#04x}, got {calc_crc:#04x})")
-    else:
-        # if True:
-        # process data
-        # print(f"[UDP] Received measurement type {mtype:#04x} at {tstamp} with CRC {crc:#04x}")
-        if mtype == ACCEL_CODE:
-            x, y, z = struct.unpack('<fff', data[:12])
-            accel.append((tstamp, x, y, z))
-        elif mtype == GYRO_CODE:
-            x, y, z = struct.unpack('<fff', data[:12])
-            gyro.append((tstamp, x, y, z))
-        elif mtype == MAG_CODE:
-            x, y, z = struct.unpack('<fff', data[:12])
-            mag.append((tstamp, x, y, z))
-        # elif mtype == TEMP_CODE:
-        #     source, temperature = struct.unpack('<8sf', data[:12])
-        #     source = source.decode(
-        #         'utf-8', errors='SurrogateEscape').rstrip('\x00')
-        #     if source not in temp:
-        #         temp[source] = []
-        #     temp[source].append((tstamp, temperature))
-        elif mtype == BARO_CODE:
-            temperature, pres, alt = struct.unpack('<fff', data[:12])
-            baro.append((tstamp, temperature, pres, alt))
-        else:
-            logger.warning(
-                f"[UDP] Skipping measurement with unknown type {mtype:#04x}")
-            return None
+        return None
+    targets = {ACCEL_CODE: accel, GYRO_CODE: gyro, MAG_CODE: mag, BARO_CODE: baro}
+    if mtype not in targets:
+        # Other kiwi-measurements types (labelled temperature, humidity, lux)
+        # are not shown by this client.
+        logger.debug(f"[UDP] Ignoring measurement type {mtype:#04x}")
+        return None
+    targets[mtype].append((tstamp, *struct.unpack('<fff', data)))
     return tstamp
 
+
 def xyz_to_rtp(x, y, z):
+    """Magnitude, elevation θ (from the horizontal plane) and azimuth φ.
+
+    A zero vector has no direction; its angles are reported as 0 instead of NaN.
+    """
     r = np.sqrt(x**2 + y**2 + z**2)
-    theta = np.arccos(z / r) - np.pi / 2  # polar angle
-    phi = np.arctan2(y, x) # azimuthal angle
+    cos_polar = np.divide(z, r, out=np.zeros_like(r, dtype=float), where=r > 0)
+    theta = np.arccos(np.clip(cos_polar, -1.0, 1.0)) - np.pi / 2
+    phi = np.arctan2(y, x)
     return r, theta, phi
+
+
+def latest_timestamp(*frames: pd.DataFrame):
+    """Newest device timestamp across the given frames, or None if all are empty."""
+    last = [int(df['tstamp'].iloc[-1]) for df in frames if not df.empty]
+    return max(last) if last else None

@@ -1,7 +1,8 @@
+# Python 3.13+ (the logger threads use queue.Queue.shutdown).
 matplotlib
-pyside6
+pyside6      # Qt backend for matplotlib (QtAgg)
+numpy
 pandas
-dask
 crc
-netcdf4
-openpyxl
+netcdf4      # --savekind netcdf
+openpyxl     # --savekind excel
