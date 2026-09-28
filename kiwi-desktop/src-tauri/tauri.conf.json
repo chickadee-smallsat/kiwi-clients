@@ -1,30 +1,31 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Kiwi Dashboard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.kiwi.mainboard",
   "build": {
-    "beforeDevCommand": "",
-    "devUrl": "http://127.0.0.1:8080",
-    "beforeBuildCommand": "",
-    "frontendDist": "../dist"
+    "frontendDist": "../app"
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "windows": [
       {
+        "label": "main",
         "title": "Kiwi Dashboard",
-        "url": "http://127.0.0.1:8080",
-        "width": 1200,
+        "url": "index.html",
+        "width": 1280,
         "height": 800,
-        "minWidth": 900,
-        "minHeight": 650,
+        "minWidth": 960,
+        "minHeight": 600,
         "resizable": true,
         "center": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "capabilities": [
+        "default"
+      ]
     }
   },
   "bundle": {
@@ -39,7 +40,3 @@
     ]
   }
 }
-
-
-
-

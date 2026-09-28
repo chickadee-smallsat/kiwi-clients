@@ -13,11 +13,30 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// ── Signing ────────────────────────────────────────────────────────────────
+// For local development / sideloading we auto-generate a debug keystore.
+// For production releases, set KIWI_KEY_STORE, KIWI_KEY_ALIAS,
+// KIWI_KEY_PASSWORD, and KIWI_STORE_PASSWORD as environment variables.
+val releaseSigningConfig = if (System.getenv("KIWI_KEY_STORE") != null) {
+    val storeFile   = file(System.getenv("KIWI_KEY_STORE")!!)
+    val keyAlias    = System.getenv("KIWI_KEY_ALIAS")    ?: "kiwi"
+    val keyPass     = System.getenv("KIWI_KEY_PASSWORD") ?: ""
+    val storePass   = System.getenv("KIWI_STORE_PASSWORD") ?: keyPass
+    android.signingConfigs.create("release") {
+        this.storeFile   = storeFile
+        this.keyAlias    = keyAlias
+        this.keyPassword = keyPass
+        this.storePassword = storePass
+    }
+} else null
+
 android {
     compileSdk = 36
     namespace = "com.kiwi.mainboard"
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        // Allow HTTP to the local Kiwi sensor server (LAN / localhost).
+        // This is an instrument monitor, not a public web app.
+        manifestPlaceholders["usesCleartextTraffic"] = "true"
         applicationId = "com.kiwi.mainboard"
         minSdk = 24
         targetSdk = 36
@@ -30,19 +49,26 @@ android {
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false
-            packaging {                jniLibs.keepDebugSymbols.add("*/arm64-v8a/*.so")
+            packaging {
+                jniLibs.keepDebugSymbols.add("*/arm64-v8a/*.so")
                 jniLibs.keepDebugSymbols.add("*/armeabi-v7a/*.so")
                 jniLibs.keepDebugSymbols.add("*/x86/*.so")
                 jniLibs.keepDebugSymbols.add("*/x86_64/*.so")
             }
         }
         getByName("release") {
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
                     .toList().toTypedArray()
             )
+            // Use explicit signing config when env vars are set; otherwise
+            // Gradle defaults to the debug keystore (fine for sideloading).
+            if (releaseSigningConfig != null) {
+                signingConfig = releaseSigningConfig
+            }
         }
     }
     kotlinOptions {

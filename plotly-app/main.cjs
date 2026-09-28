@@ -72,7 +72,7 @@ async function startBackend() {
 
   if (!fs.existsSync(binPath)) {
     throw new Error(
-      `Rust binary not found at ${binPath}. Run \"npm run build:rust && npm run prepare:bin\" first.`
+      `Rust binary not found at ${binPath}. Run "npm run build:rust && npm run prepare:bin" first.`
     );
   }
 
@@ -116,21 +116,18 @@ function stopBackend() {
   backendProcess.kill('SIGTERM');
 }
 
-async function createMainWindow() {
-  const port = await startBackend();
+let backendPort = null;
 
+async function createMainWindow() {
   const win = new BrowserWindow({
     width: 1280,
     height: 840,
     minWidth: 980,
     minHeight: 700,
     autoHideMenuBar: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs')
-    }
   });
 
-  await win.loadURL(`http://${HTTP_HOST}:${port}`);
+  await win.loadURL(`http://${HTTP_HOST}:${backendPort}`);
 }
 
 app.on('before-quit', () => {
@@ -144,8 +141,16 @@ app.on('window-all-closed', () => {
   }
 });
 
+// macOS keeps the app (and backend) running with no window; the Dock icon reopens one.
+app.on('activate', () => {
+  if (backendPort !== null && BrowserWindow.getAllWindows().length === 0) {
+    createMainWindow().catch((err) => dialog.showErrorBox('Failed to open window', String(err)));
+  }
+});
+
 app.whenReady().then(async () => {
   try {
+    backendPort = await startBackend();
     await createMainWindow();
   } catch (err) {
     dialog.showErrorBox('Failed to start Kiwi Frontend', String(err));

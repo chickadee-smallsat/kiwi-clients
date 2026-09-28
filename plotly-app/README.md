@@ -53,4 +53,4 @@ npm run dist
 
 ## CI
 
-GitHub Actions workflow `.github/workflows/electron-build.yml` builds Linux, Windows, and macOS artifacts on every relevant push and pull request.
+GitHub Actions workflow `.github/workflows/electron-build.yml` builds Linux, Windows (x64 and ARM64) and macOS installers when a `v*` tag is pushed (or on manual dispatch), and attaches them to a GitHub release. Everyday checks run in `.github/workflows/ci.yml`.
