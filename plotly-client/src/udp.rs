@@ -1,183 +1,176 @@
+//! UDP ingestion: receive `SingleMeasurement` packets from Kiwi boards, group
+//! them per device and hand 100 ms batches to the [`Broadcaster`].
+
 use atomic_time::AtomicInstant;
-use kiwi_measurements::{SINGLE_MEASUREMENT_SIZE, SingleMeasurement};
+use kiwi_measurements::SingleMeasurement;
 use std::{
+    collections::HashMap,
+    io,
     net::{SocketAddr, SocketAddrV4, ToSocketAddrs},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
-use tokio::{net::UdpSocket, time};
+use tokio::{
+    net::UdpSocket,
+    time::{self, MissedTickBehavior},
+};
 
 use crate::broadcast::Broadcaster;
 
-pub async fn udp_listener_unicast(
-    bind: SocketAddrV4,
-    sink: Arc<Broadcaster>,
-    running: Arc<AtomicBool>,
-) {
-    let datarate = DataRateCounter::default();
-    while running.load(Ordering::Relaxed) {
-        log::trace!("[UDPU] Listening for UDP packets from {bind}");
-        let socket = match UdpSocket::bind(bind).await {
-            Ok(sock) => sock,
-            Err(e) => {
-                log::error!("[UDPU] Failed to bind UDP socket: {e}");
-                time::sleep(Duration::from_secs(1)).await;
-                continue;
-            }
-        };
+/// How often accumulated measurements are pushed to browsers.
+const BATCH_INTERVAL: Duration = Duration::from_millis(100);
+/// Receive buffer. Larger than one measurement so an oversized datagram is
+/// rejected by the length check instead of failing `recv_from` (Windows
+/// reports truncation as an error).
+const RECV_BUF_SIZE: usize = 2048;
+/// Pause before rebinding after a socket error, and between failed binds.
+const REBIND_DELAY: Duration = Duration::from_secs(1);
 
-        if udp_receive_data("UDPU", &socket, &sink, running.clone(), &datarate)
-            .await
-            .is_err()
-        {
-            continue;
-        }
-    }
-    log::trace!("[UDPU] Stopping UDP listener");
+/// A board is identified by its IP address. The source port is ephemeral and
+/// changes on every reboot, so it must not be part of the identity.
+pub fn device_id(src: SocketAddr) -> String {
+    src.ip().to_string()
 }
 
-#[allow(dead_code)]
-pub async fn udp_listener_multicast(
-    bind: SocketAddrV4,
-    address: SocketAddrV4,
-    interface: SocketAddrV4,
-    sink: Arc<Broadcaster>,
-    running: Arc<AtomicBool>,
-) {
-    let iface = interface.ip();
+pub async fn udp_listener_unicast(bind: SocketAddrV4, sink: Arc<Broadcaster>) {
     let datarate = DataRateCounter::default();
-
-    while running.load(Ordering::Relaxed) {
-        log::trace!("[UDPM] Listening for UDP packets from {address} on interface {interface}");
+    loop {
         let socket = match UdpSocket::bind(bind).await {
             Ok(sock) => sock,
             Err(e) => {
-                log::error!("[UDPM] Failed to bind UDP socket: {e}");
-                time::sleep(Duration::from_secs(1)).await;
+                log::error!("[UDPU] Failed to bind UDP socket {bind}: {e}");
+                time::sleep(REBIND_DELAY).await;
                 continue;
             }
         };
-        let socket = match socket.into_std() {
-            Ok(socket) => socket,
-            Err(e) => {
-                log::error!("[UDPM] Failed to convert UdpSocket to std::net::UdpSocket: {e}");
-                time::sleep(Duration::from_secs(1)).await;
-                continue;
-            }
-        };
-        let socket = socket2::Socket::from(socket);
-        if let Err(e) = socket.set_reuse_address(true) {
-            log::error!("[UDPM] Failed to set socket to reuse address: {e}");
-            time::sleep(Duration::from_secs(1)).await;
-            continue;
-        }
-
-        if let Err(e) = socket.join_multicast_v4(address.ip(), iface) {
-            log::error!("[UDPM] Failed to join multicast group: {e}");
-            time::sleep(Duration::from_secs(1)).await;
-            continue;
-        };
-        log::trace!("[UDPM] Successfully joined multicast group");
-
-        let socket = match UdpSocket::from_std(socket.into()) {
-            Ok(sock) => sock,
-            Err(e) => {
-                log::error!("[UDPM] Failed to convert std::net::UdpSocket back to UdpSocket: {e}");
-                panic!("[UDPM] Cannot continue without a valid UdpSocket");
-            }
-        };
-
-        if udp_receive_data("UDPM", &socket, &sink, running.clone(), &datarate)
-            .await
-            .is_err()
-        {
-            continue;
+        log::info!("[UDPU] Listening for UDP packets on {bind}");
+        if let Err(e) = udp_receive_data("UDPU", &socket, &sink, &datarate).await {
+            log::error!("[UDPU] Socket error, rebinding: {e}");
+            time::sleep(REBIND_DELAY).await; // do not spin on a persistent error
         }
     }
-    log::trace!("[UDPM] Stopping UDP listener");
+}
+
+pub async fn udp_listener_multicast(
+    bind: SocketAddrV4,
+    group: SocketAddrV4,
+    interface: SocketAddrV4,
+    sink: Arc<Broadcaster>,
+) {
+    let datarate = DataRateCounter::default();
+    loop {
+        let socket = match join_multicast(bind, group, interface) {
+            Ok(sock) => sock,
+            Err(e) => {
+                log::error!("[UDPM] Failed to join {group} on {interface}: {e}");
+                time::sleep(REBIND_DELAY).await;
+                continue;
+            }
+        };
+        log::info!("[UDPM] Listening for multicast {group} on interface {interface}");
+        if let Err(e) = udp_receive_data("UDPM", &socket, &sink, &datarate).await {
+            log::error!("[UDPM] Socket error, rejoining: {e}");
+            time::sleep(REBIND_DELAY).await; // do not spin on a persistent error
+        }
+    }
+}
+
+fn join_multicast(
+    bind: SocketAddrV4,
+    group: SocketAddrV4,
+    interface: SocketAddrV4,
+) -> io::Result<UdpSocket> {
+    let socket = socket2::Socket::new(
+        socket2::Domain::IPV4,
+        socket2::Type::DGRAM,
+        Some(socket2::Protocol::UDP),
+    )?;
+    socket.set_reuse_address(true)?;
+    socket.set_nonblocking(true)?;
+    socket.bind(&SocketAddr::V4(bind).into())?;
+    socket.join_multicast_v4(group.ip(), interface.ip())?;
+    UdpSocket::from_std(socket.into())
 }
 
 async fn udp_receive_data(
     kind: &str,
     socket: &UdpSocket,
     sink: &Broadcaster,
-    running: Arc<AtomicBool>,
     datarate: &DataRateCounter,
-) -> Result<(), ()> {
-    use std::collections::HashMap;
+) -> io::Result<()> {
+    let mut batches: HashMap<String, Vec<SingleMeasurement>> = HashMap::new();
+    let mut counts: HashMap<String, usize> = HashMap::new();
 
-    let mut buf_by_device: HashMap<String, Vec<SingleMeasurement>> = HashMap::new();
-    let mut packet_count_by_device: HashMap<String, usize> = HashMap::new();
-    let mut last_rate_update = Instant::now();
-    let mut xmit = false;
+    let mut flush = time::interval(BATCH_INTERVAL);
+    flush.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let mut rate_tick = time::interval(Duration::from_secs(1));
+    rate_tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
-    'receive: while running.load(Ordering::Relaxed) {
-        let start = Instant::now();
-        if last_rate_update.elapsed() >= Duration::from_secs(1) {
-            let rates = std::mem::take(&mut packet_count_by_device);
-
-            for (device_id, rate) in rates {
-                sink.update_packet_rate(device_id, rate).await;
-            }
-
-            last_rate_update = Instant::now();
-        }
-
-        if xmit {
-            // Broadcast whatever accumulated in this 100 ms window.
-            // An empty map is normal (no packets arrived) — do NOT treat it
-            // as a socket error; that caused a spurious rebind every 100 ms.
-            for (device_id, buf) in buf_by_device.iter_mut() {
-                if buf.is_empty() {
-                    continue;
+    let mut invalid = InvalidPacketLog::default();
+    let mut buf = [0u8; RECV_BUF_SIZE];
+    loop {
+        tokio::select! {
+            res = socket.recv_from(&mut buf) => {
+                let (size, src) = res?;
+                if let Some((rate, unit)) = datarate.update(size) {
+                    log::info!("[{kind}] Receiving data rate: {rate:.3} {unit}");
                 }
-                let msg = serde_json::to_string(buf).expect("Failed to serialize measurements");
-                sink.broadcast_device(device_id.clone(), &msg).await;
-                buf.clear();
-            }
-            // Drop entries whose buffers are now empty so the map stays tidy.
-            buf_by_device.retain(|_, v| !v.is_empty());
-            xmit = false;
-        }
-
-        while running.load(Ordering::Relaxed) {
-            let mut sbuf = [0u8; SINGLE_MEASUREMENT_SIZE];
-            tokio::select! {
-                res = socket.recv_from(&mut sbuf) => {
-                    match res {
-                        Ok((size, src)) => {
-                            if let Some((rate, unit)) = datarate.update(size) {
-                                log::info!("[{kind}] Receiving data rate: {rate:.3} {unit}");
-                            }
-                            if let Ok(mes) = SingleMeasurement::try_from(&sbuf[..size]).inspect_err(|e| {
-                                log::warn!("[{kind}] Received invalid measurement: {e:?}");
-                            }) {
-                                let device_id = src.to_string();
-                                sink.register_port(device_id.clone()).await;
-                                *packet_count_by_device.entry(device_id.clone()).or_default() += 1;
-                                buf_by_device.entry(device_id).or_default().push(mes);
-                            }
-                        }
-                        Err(_) => {
-                            Err(())?;
+                match SingleMeasurement::try_from(&buf[..size]) {
+                    Ok(mes) => {
+                        let id = device_id(src);
+                        sink.mark_seen(&id, Instant::now());
+                        *counts.entry(id.clone()).or_default() += 1;
+                        batches.entry(id).or_default().push(mes);
+                    }
+                    Err(e) => {
+                        if let Some(suppressed) = invalid.record(Instant::now()) {
+                            log::warn!(
+                                "[{kind}] Invalid measurement from {src} ({size} bytes): {e:?}                                  ({suppressed} more suppressed in the last second)"
+                            );
                         }
                     }
-                    if start.elapsed() >= Duration::from_millis(100) {
-                        xmit = true;
-                        continue 'receive;
-                    }
                 }
-                _ = tokio::time::sleep(Duration::from_millis(100)) => {
-                    xmit = true;
-                    continue 'receive;
-                }
+            }
+            _ = flush.tick() => flush_batches(&mut batches, sink),
+            _ = rate_tick.tick() => sink.update_rates(std::mem::take(&mut counts)),
+        }
+    }
+}
+
+fn flush_batches(batches: &mut HashMap<String, Vec<SingleMeasurement>>, sink: &Broadcaster) {
+    for (id, batch) in batches.drain() {
+        match serde_json::to_string(&batch) {
+            Ok(msg) => sink.broadcast_device(&id, msg),
+            Err(e) => log::error!("Failed to serialize measurements for {id}: {e}"),
+        }
+    }
+}
+
+/// Rate-limits invalid-packet warnings: a misbehaving sender must not flood
+/// the log. Logs at most once per second, reporting how many were skipped.
+#[derive(Default)]
+struct InvalidPacketLog {
+    last_logged: Option<Instant>,
+    suppressed: usize,
+}
+
+impl InvalidPacketLog {
+    /// Returns `Some(suppressed_count)` when this packet should be logged.
+    fn record(&mut self, now: Instant) -> Option<usize> {
+        match self.last_logged {
+            Some(t) if now.duration_since(t) < Duration::from_secs(1) => {
+                self.suppressed += 1;
+                None
+            }
+            _ => {
+                self.last_logged = Some(now);
+                Some(std::mem::take(&mut self.suppressed))
             }
         }
     }
-    Ok(())
 }
 
 pub struct DataRateCounter {
@@ -197,34 +190,29 @@ impl Default for DataRateCounter {
 }
 
 impl DataRateCounter {
-    pub fn update(&self, bytes: usize) -> Option<(f32, &str)> {
-        let nnow = Instant::now();
-        match self
+    /// Add `bytes`; once per `rate` seconds returns the bit rate since the last report.
+    pub fn update(&self, bytes: usize) -> Option<(f32, &'static str)> {
+        self.update_at(bytes, Instant::now())
+    }
+
+    fn update_at(&self, bytes: usize, nnow: Instant) -> Option<(f32, &'static str)> {
+        let start = self
             .start
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |start| {
-                if nnow.duration_since(start).as_secs_f32() >= self.rate {
-                    Some(nnow)
-                } else {
-                    None
-                }
-            })
-            .ok()
-        {
-            Some(start) => {
+                (nnow.duration_since(start).as_secs_f32() >= self.rate).then_some(nnow)
+            });
+        match start {
+            Ok(start) => {
                 let count = self.count.swap(0, Ordering::SeqCst) + bytes;
-                if count == 0 {
-                    None
-                } else {
-                    let dur = nnow.duration_since(start).as_secs_f32();
-                    let bytes = (count * 8) as f32;
-                    Some(match bytes {
-                        b if b >= 1024.0 * 1024.0 => (bytes / 1024.0 / 1024.0 / dur, "mbps"),
-                        b if b >= 1024.0 => (bytes / 1024.0 / dur, "kbps"),
-                        b => (b / dur, "bps"),
-                    })
-                }
+                let dur = nnow.duration_since(start).as_secs_f32();
+                let bits = (count * 8) as f32 / dur;
+                Some(match bits {
+                    b if b >= 1024.0 * 1024.0 => (b / 1024.0 / 1024.0, "mbps"),
+                    b if b >= 1024.0 => (b / 1024.0, "kbps"),
+                    b => (b, "bps"),
+                })
             }
-            None => {
+            Err(_) => {
                 self.count.fetch_add(bytes, Ordering::SeqCst);
                 None
             }
@@ -240,4 +228,58 @@ pub fn cleaner_sockaddr<T: ToSocketAddrs + std::fmt::Debug>(s: T) -> Result<Sock
             _ => None,
         })
         .ok_or_else(|| format!("No valid IPv4 address found for {s:?}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kiwi_measurements::{CommonMeasurement, SINGLE_MEASUREMENT_SIZE};
+
+    #[test]
+    fn invalid_packet_warnings_are_rate_limited() {
+        let mut log = InvalidPacketLog::default();
+        let t0 = Instant::now();
+        assert_eq!(log.record(t0), Some(0));
+        // A burst within the same second is counted, not logged.
+        for i in 1..1000 {
+            assert_eq!(log.record(t0 + Duration::from_micros(i)), None);
+        }
+        assert_eq!(log.record(t0 + Duration::from_secs(1)), Some(999));
+        assert_eq!(log.record(t0 + Duration::from_millis(1500)), None);
+    }
+
+    #[test]
+    fn device_id_ignores_source_port() {
+        let a: SocketAddr = "192.168.1.20:50001".parse().unwrap();
+        let b: SocketAddr = "192.168.1.20:61234".parse().unwrap();
+        assert_eq!(device_id(a), "192.168.1.20");
+        assert_eq!(device_id(a), device_id(b));
+    }
+
+    #[test]
+    fn data_rate_reports_bits_per_second() {
+        let c = DataRateCounter::default();
+        let t0 = c.start.load(Ordering::SeqCst);
+        assert!(c.update_at(1000, t0 + Duration::from_millis(500)).is_none());
+        let (rate, unit) = c.update_at(1000, t0 + Duration::from_secs(1)).unwrap();
+        // 2000 bytes = 16000 bits over 1 s = 15.625 kbps
+        assert_eq!(unit, "kbps");
+        assert!((rate - 15.625).abs() < 0.01, "{rate}");
+    }
+
+    #[test]
+    fn measurement_roundtrip_and_rejects_bad_packets() {
+        let m = SingleMeasurement {
+            measurement: CommonMeasurement::Accel(0.1, -0.2, 0.98),
+            timestamp: 1_600_000_123,
+        };
+        let bytes: [u8; SINGLE_MEASUREMENT_SIZE] = m.into();
+        let back = SingleMeasurement::try_from(&bytes[..]).unwrap();
+        assert_eq!(back.timestamp, 1_600_000_123);
+
+        let mut corrupt = bytes;
+        corrupt[3] ^= 0xFF;
+        assert!(SingleMeasurement::try_from(&corrupt[..]).is_err());
+        assert!(SingleMeasurement::try_from(&bytes[..10]).is_err());
+    }
 }

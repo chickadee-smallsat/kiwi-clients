@@ -1,5 +1,12 @@
+//! Fan-out of device data to browser clients over Server-Sent Events.
+//!
+//! Every operation here is synchronous and non-blocking: messages are queued
+//! with `try_send`, so a slow or frozen browser tab can never stall the UDP
+//! receive loop. A client whose queue is full (or whose connection closed) is
+//! dropped; the browser's `EventSource` reconnects on its own.
+
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -9,251 +16,310 @@ use actix_web_lab::{
     sse::{self, Sse},
     util::InfallibleStream,
 };
-use futures_util::future;
 use parking_lot::Mutex;
 use serde::Serialize;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::wrappers::ReceiverStream;
 
-const DEVICE_TIMEOUT: Duration = Duration::from_secs(3);
+/// A device disappears from the list after this long without a packet.
+pub const DEVICE_TIMEOUT: Duration = Duration::from_secs(3);
+/// How often stale devices and dead clients are pruned.
+const PRUNE_INTERVAL: Duration = Duration::from_secs(2);
+/// Per-client queue for measurement batches. Batches go out every 100 ms, so
+/// this is ~25 s of headroom before a stalled client is dropped.
+const DEVICE_CLIENT_QUEUE: usize = 256;
+/// Device-list updates are at most ~1/s per device.
+const LIST_CLIENT_QUEUE: usize = 64;
+
+type Client = mpsc::Sender<sse::Event>;
+pub type SseStream = Sse<InfallibleStream<ReceiverStream<sse::Event>>>;
 
 pub struct Broadcaster {
-    inner: Mutex<BroadcasterInner>,
+    inner: Mutex<Inner>,
 }
 
-#[derive(Debug, Clone, Default)]
-struct BroadcasterInner {
-    clients: Vec<mpsc::Sender<sse::Event>>,
-    device_clients: HashMap<String, Vec<mpsc::Sender<sse::Event>>>,
-    device_list_clients: Vec<mpsc::Sender<sse::Event>>,
-    known_devices: HashMap<String, Instant>,
-    packet_rates: HashMap<String, usize>,
+#[derive(Default)]
+struct Inner {
+    device_clients: HashMap<String, Vec<Client>>,
+    device_list_clients: Vec<Client>,
+    devices: HashMap<String, DeviceState>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+struct DeviceState {
+    last_seen: Instant,
+    /// Valid packets received during the last full second.
+    rate: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DeviceInfo {
-    pub port: String,
+    pub id: String,
     pub rate: usize,
 }
 
+/// Queue `event` on every client, keeping only the ones that accepted it.
+/// Returns how many were dropped for being too slow (closed ones are not counted).
+fn send_all(clients: &mut Vec<Client>, event: &sse::Event) -> usize {
+    let mut slow = 0;
+    clients.retain(|c| match c.try_send(event.clone()) {
+        Ok(()) => true,
+        Err(TrySendError::Full(_)) => {
+            slow += 1;
+            false
+        }
+        Err(TrySendError::Closed(_)) => false,
+    });
+    slow
+}
+
+impl Inner {
+    fn device_infos(&self) -> Vec<DeviceInfo> {
+        let mut list: Vec<_> = self
+            .devices
+            .iter()
+            .map(|(id, d)| DeviceInfo {
+                id: id.clone(),
+                rate: d.rate,
+            })
+            .collect();
+        list.sort_by(|a, b| a.id.cmp(&b.id));
+        list
+    }
+
+    fn publish_device_list(&mut self) {
+        let Ok(payload) = serde_json::to_string(&self.device_infos()) else {
+            return;
+        };
+        send_all(
+            &mut self.device_list_clients,
+            &sse::Data::new(payload).into(),
+        );
+    }
+
+    /// Forget devices not seen since `cutoff`. Returns true if any were removed.
+    fn expire_devices(&mut self, cutoff: Instant) -> bool {
+        let before = self.devices.len();
+        self.devices.retain(|_, d| d.last_seen >= cutoff);
+        before != self.devices.len()
+    }
+}
+
 impl Broadcaster {
+    /// Create a broadcaster and start its background prune task.
     pub fn create() -> Arc<Self> {
-        let this = Arc::new(Broadcaster {
-            inner: Mutex::new(BroadcasterInner::default()),
+        let this = Arc::new(Self::new());
+        let pruner = Arc::clone(&this);
+        actix_web::rt::spawn(async move {
+            let mut tick = interval(PRUNE_INTERVAL);
+            loop {
+                tick.tick().await;
+                pruner.prune(Instant::now());
+            }
         });
-
-        Broadcaster::spawn_ping(Arc::clone(&this));
-
         this
     }
 
-    fn spawn_ping(this: Arc<Self>) {
-        actix_web::rt::spawn(async move {
-            let mut interval = interval(Duration::from_secs(10));
+    fn new() -> Self {
+        Self {
+            inner: Mutex::new(Inner::default()),
+        }
+    }
 
-            loop {
-                interval.tick().await;
-                this.remove_stale_clients().await;
-            }
+    /// Drop devices that timed out and clients whose connection is gone.
+    fn prune(&self, now: Instant) {
+        let mut inner = self.inner.lock();
+        let ping: sse::Event = sse::Event::Comment("ping".into());
+
+        send_all(&mut inner.device_list_clients, &ping);
+        inner.device_clients.retain(|_, list| {
+            send_all(list, &ping);
+            !list.is_empty()
         });
-    }
 
-    async fn remove_stale_clients(&self) {
-        let (clients, device_clients, device_list_clients) = {
-            let inner = self.inner.lock();
-            (
-                inner.clients.clone(),
-                inner.device_clients.clone(),
-                inner.device_list_clients.clone(),
-            )
-        };
-
-        let mut ok_clients = Vec::new();
-        for client in clients {
-            if client
-                .send(sse::Event::Comment("ping".into()))
-                .await
-                .is_ok()
-            {
-                ok_clients.push(client.clone());
-            }
-        }
-
-        let mut ok_device_clients: HashMap<String, Vec<mpsc::Sender<sse::Event>>> = HashMap::new();
-        for (port, list) in device_clients {
-            let mut ok_list = Vec::new();
-
-            for client in list {
-                if client
-                    .send(sse::Event::Comment("ping".into()))
-                    .await
-                    .is_ok()
-                {
-                    ok_list.push(client.clone());
-                }
-            }
-
-            if !ok_list.is_empty() {
-                ok_device_clients.insert(port, ok_list);
-            }
-        }
-
-        let mut ok_device_list_clients = Vec::new();
-        for client in device_list_clients {
-            if client
-                .send(sse::Event::Comment("ping".into()))
-                .await
-                .is_ok()
-            {
-                ok_device_list_clients.push(client.clone());
-            }
-        }
-
-        let (devices_changed, device_infos) = {
-            let mut inner = self.inner.lock();
-
-            let cutoff = Instant::now() - DEVICE_TIMEOUT;
-            let before = inner.known_devices.len();
-            inner
-                .known_devices
-                .retain(|_, last_seen| *last_seen >= cutoff);
-
-            let live_ports: HashSet<String> = inner.known_devices.keys().cloned().collect();
-            inner
-                .packet_rates
-                .retain(|port, _| live_ports.contains(port));
-
-            let devices_changed = before != inner.known_devices.len();
-            let device_infos = Self::build_device_infos(&inner);
-
-            inner.clients = ok_clients;
-            inner.device_clients = ok_device_clients;
-            inner.device_list_clients = ok_device_list_clients;
-
-            (devices_changed, device_infos)
-        };
-
-        if devices_changed {
-            if let Ok(payload) = serde_json::to_string(&device_infos) {
-                self.broadcast_device_list(&payload).await;
-            }
+        if inner.expire_devices(now - DEVICE_TIMEOUT) {
+            inner.publish_device_list();
         }
     }
 
-    fn build_device_infos(inner: &BroadcasterInner) -> Vec<DeviceInfo> {
-        let cutoff = Instant::now() - DEVICE_TIMEOUT;
-        inner
-            .known_devices
-            .iter()
-            .filter(|(_, last_seen)| **last_seen >= cutoff)
-            .map(|(port, _)| DeviceInfo {
-                port: port.clone(),
-                rate: inner.packet_rates.get(port).copied().unwrap_or(0),
-            })
-            .collect()
+    pub fn new_device_client(&self, id: String) -> SseStream {
+        Sse::from_infallible_receiver(self.subscribe_device(id))
     }
 
-    pub async fn new_client(&self) -> Sse<InfallibleStream<ReceiverStream<sse::Event>>> {
-        // 256-slot buffer: at ~10 SSE events/s a slow browser tab has 25 s
-        // of headroom before we drop it at the next 10-s stale-client ping.
-        let (tx, rx) = mpsc::channel(256);
-        self.inner.lock().clients.push(tx);
-        Sse::from_infallible_receiver(rx)
+    /// Subscribe to the device list. The current list is sent immediately.
+    pub fn new_device_list_client(&self) -> SseStream {
+        Sse::from_infallible_receiver(self.subscribe_device_list())
     }
 
-    pub async fn new_device_client(
-        &self,
-        port: String,
-    ) -> Sse<InfallibleStream<ReceiverStream<sse::Event>>> {
-        let (tx, rx) = mpsc::channel(256);
+    fn subscribe_device(&self, id: String) -> mpsc::Receiver<sse::Event> {
+        let (tx, rx) = mpsc::channel(DEVICE_CLIENT_QUEUE);
+        self.inner
+            .lock()
+            .device_clients
+            .entry(id)
+            .or_default()
+            .push(tx);
+        rx
+    }
+
+    fn subscribe_device_list(&self) -> mpsc::Receiver<sse::Event> {
+        let (tx, rx) = mpsc::channel(LIST_CLIENT_QUEUE);
         let mut inner = self.inner.lock();
-        inner.device_clients.entry(port).or_default().push(tx);
-        Sse::from_infallible_receiver(rx)
-    }
-
-    pub async fn new_device_list_client(&self) -> Sse<InfallibleStream<ReceiverStream<sse::Event>>> {
-        // Device-list events are infrequent; 64 slots is ample.
-        let (tx, rx) = mpsc::channel(64);
-        self.inner.lock().device_list_clients.push(tx);
-        Sse::from_infallible_receiver(rx)
-    }
-
-    pub fn mark_device_seen(&self, port: String) -> bool {
-        let mut inner = self.inner.lock();
-        let is_new = !inner.known_devices.contains_key(&port);
-        inner.known_devices.insert(port, Instant::now());
-        is_new
+        if let Ok(payload) = serde_json::to_string(&inner.device_infos()) {
+            let _ = tx.try_send(sse::Data::new(payload).into());
+        }
+        inner.device_list_clients.push(tx);
+        rx
     }
 
     pub fn known_devices(&self) -> Vec<DeviceInfo> {
-        let cutoff = Instant::now() - DEVICE_TIMEOUT;
-
         let mut inner = self.inner.lock();
-        inner
-            .known_devices
-            .retain(|_, last_seen| *last_seen >= cutoff);
-
-        Self::build_device_infos(&inner)
+        inner.expire_devices(Instant::now() - DEVICE_TIMEOUT);
+        inner.device_infos()
     }
 
-    pub async fn update_packet_rate(&self, port: String, rate: usize) {
-        let device_infos = {
-            let mut inner = self.inner.lock();
-            inner.packet_rates.insert(port, rate);
-            Self::build_device_infos(&inner)
-        };
-
-        if let Ok(payload) = serde_json::to_string(&device_infos) {
-            self.broadcast_device_list(&payload).await;
-        }
-    }
-
-    pub async fn register_port(&self, port: String) {
-        let is_new = self.mark_device_seen(port);
-
-        if is_new {
-            let device_infos = self.known_devices();
-
-            if let Ok(payload) = serde_json::to_string(&device_infos) {
-                self.broadcast_device_list(&payload).await;
+    /// Record that a packet arrived from `id`. Announces new devices.
+    pub fn mark_seen(&self, id: &str, now: Instant) {
+        let mut inner = self.inner.lock();
+        match inner.devices.get_mut(id) {
+            Some(d) => d.last_seen = now,
+            None => {
+                inner.devices.insert(
+                    id.to_owned(),
+                    DeviceState {
+                        last_seen: now,
+                        rate: 0,
+                    },
+                );
+                inner.publish_device_list();
             }
         }
     }
 
-    #[allow(dead_code)]
-    pub async fn broadcast(&self, msg: &str) {
-        let clients = self.inner.lock().clients.clone();
-
-        let send_futures = clients
-            .iter()
-            .map(|client| client.send(sse::Data::new(msg).into()));
-
-        let _ = future::join_all(send_futures).await;
+    /// Store per-device packet rates for the last second and publish them.
+    pub fn update_rates(&self, rates: HashMap<String, usize>) {
+        let mut inner = self.inner.lock();
+        for d in inner.devices.values_mut() {
+            d.rate = 0;
+        }
+        for (id, rate) in rates {
+            if let Some(d) = inner.devices.get_mut(&id) {
+                d.rate = rate;
+            }
+        }
+        inner.publish_device_list();
     }
 
-    pub async fn broadcast_device(&self, port: String, msg: &str) {
-        let clients = self
-            .inner
+    /// Send a JSON batch to every client watching `id`.
+    pub fn broadcast_device(&self, id: &str, msg: String) {
+        let mut inner = self.inner.lock();
+        if let Some(list) = inner.device_clients.get_mut(id) {
+            let slow = send_all(list, &sse::Data::new(msg).into());
+            if slow > 0 {
+                log::warn!("Dropped {slow} client(s) of device {id} that fell too far behind");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client(cap: usize) -> (Client, mpsc::Receiver<sse::Event>) {
+        mpsc::channel(cap)
+    }
+
+    #[test]
+    fn new_device_is_listed_and_expires() {
+        let b = Broadcaster::new();
+        let t0 = Instant::now();
+        b.mark_seen("10.0.0.5", t0);
+        assert_eq!(
+            b.known_devices(),
+            vec![DeviceInfo {
+                id: "10.0.0.5".into(),
+                rate: 0
+            }]
+        );
+
+        b.prune(t0 + DEVICE_TIMEOUT + Duration::from_millis(1));
+        assert!(b.known_devices().is_empty());
+    }
+
+    #[test]
+    fn rates_apply_only_to_known_devices_and_reset() {
+        let b = Broadcaster::new();
+        let now = Instant::now();
+        b.mark_seen("a", now);
+        b.mark_seen("b", now);
+
+        b.update_rates(HashMap::from([("a".into(), 50), ("ghost".into(), 9)]));
+        let list = b.known_devices();
+        assert_eq!(
+            list[0],
+            DeviceInfo {
+                id: "a".into(),
+                rate: 50
+            }
+        );
+        assert_eq!(
+            list[1],
+            DeviceInfo {
+                id: "b".into(),
+                rate: 0
+            }
+        );
+
+        // A device that sent nothing in the next second reads 0, not a stale value.
+        b.update_rates(HashMap::new());
+        assert!(b.known_devices().iter().all(|d| d.rate == 0));
+    }
+
+    #[test]
+    fn broadcast_reaches_only_matching_device() {
+        let b = Broadcaster::new();
+        let mut rx_a = b.subscribe_device("a".into());
+        let mut rx_b = b.subscribe_device("b".into());
+
+        b.broadcast_device("a", "[1]".into());
+        assert!(rx_a.try_recv().is_ok());
+        assert!(rx_b.try_recv().is_err());
+    }
+
+    #[test]
+    fn full_client_is_dropped_without_blocking() {
+        let b = Broadcaster::new();
+        let (slow, _rx_slow) = client(1);
+        let (fast, mut rx_fast) = client(8);
+        b.inner
             .lock()
             .device_clients
-            .get(&port)
-            .cloned()
-            .unwrap_or_default();
+            .insert("a".into(), vec![slow, fast]);
 
-        let send_futures = clients
-            .iter()
-            .map(|client| client.send(sse::Data::new(msg).into()));
-
-        let _ = future::join_all(send_futures).await;
+        // The slow client's single slot fills, the second send drops it.
+        b.broadcast_device("a", "1".into());
+        b.broadcast_device("a", "2".into());
+        assert_eq!(b.inner.lock().device_clients["a"].len(), 1);
+        assert!(rx_fast.try_recv().is_ok());
+        assert!(rx_fast.try_recv().is_ok());
     }
 
-    pub async fn broadcast_device_list(&self, msg: &str) {
-        let clients = self.inner.lock().device_list_clients.clone();
+    #[test]
+    fn closed_clients_are_pruned() {
+        let b = Broadcaster::new();
+        drop(b.subscribe_device("a".into()));
+        b.prune(Instant::now());
+        assert!(b.inner.lock().device_clients.is_empty());
+    }
 
-        let send_futures = clients
-            .iter()
-            .map(|client| client.send(sse::Data::new(msg).into()));
-
-        let _ = future::join_all(send_futures).await;
+    #[test]
+    fn list_client_gets_current_list_on_subscribe() {
+        let b = Broadcaster::new();
+        b.mark_seen("a", Instant::now());
+        let mut rx = b.subscribe_device_list();
+        assert!(rx.try_recv().is_ok());
+        // New devices are announced to subscribers.
+        b.mark_seen("b", Instant::now());
+        assert!(rx.try_recv().is_ok());
     }
 }

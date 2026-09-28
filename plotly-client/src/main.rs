@@ -18,29 +18,25 @@ async fn main() -> io::Result<()> {
 
     let data = Broadcaster::create();
 
-    log::info!(
-        "starting HTTP server at http://localhost:{}",
-        args.http_port
-    );
-
-    if !args.no_open
-        && let Err(e) = open::that(format!("http://localhost:{}", args.http_port))
-    {
-        log::warn!("Failed to open browser: {}", e)
+    let listener = Arc::clone(&data);
+    match args.multicast_group {
+        Some(group) => {
+            let group = udp::cleaner_sockaddr((group.as_str(), args.udp_port))
+                .expect("Invalid multicast group address");
+            let iface = udp::cleaner_sockaddr((args.multicast_iface.as_str(), 0))
+                .expect("Invalid multicast interface address");
+            actix_web::rt::spawn(udp::udp_listener_multicast(
+                bindaddr, group, iface, listener,
+            ));
+        }
+        None => {
+            actix_web::rt::spawn(udp::udp_listener_unicast(bindaddr, listener));
+        }
     }
 
-    actix_web::rt::spawn({
-        let broadcaster = Arc::clone(&data);
-        async move {
-            let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
-            udp::udp_listener_unicast(bindaddr, broadcaster, running).await;
-        }
-    });
-
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         let app = App::new()
             .app_data(web::Data::from(Arc::clone(&data)))
-            .service(event_stream)
             .service(devices_stream)
             .service(devices_list)
             .service(device_stream);
@@ -59,26 +55,24 @@ async fn main() -> io::Result<()> {
     })
     .bind((args.http_addr.as_str(), args.http_port))?
     .workers(2)
-    .run()
-    .await
-}
+    .run();
 
-#[get("/events")]
-async fn event_stream(broadcaster: web::Data<Broadcaster>) -> impl Responder {
-    #[cfg(debug_assertions)]
-    log::info!("SSE client connected");
-    #[cfg(not(debug_assertions))]
-    log::debug!("SSE client connected");
-    broadcaster.new_client().await
+    // Open the browser only once the port is bound, so the first load cannot fail.
+    let url = format!("http://localhost:{}", args.http_port);
+    log::info!("HTTP server listening at {url}");
+    if !args.no_open
+        && let Err(e) = open::that(&url)
+    {
+        log::warn!("Failed to open browser: {e}")
+    }
+
+    server.await
 }
 
 #[get("/devices/events")]
 async fn devices_stream(broadcaster: web::Data<Broadcaster>) -> impl Responder {
-    #[cfg(debug_assertions)]
-    log::info!("Device list SSE client connected");
-    #[cfg(not(debug_assertions))]
     log::debug!("Device list SSE client connected");
-    broadcaster.new_device_list_client().await
+    broadcaster.new_device_list_client()
 }
 
 #[get("/devices")]
@@ -92,13 +86,8 @@ async fn device_stream(
     device_id: web::Path<String>,
 ) -> impl Responder {
     let device_id = device_id.into_inner();
-
-    #[cfg(debug_assertions)]
-    log::info!("Device SSE client connected for device {}", device_id);
-    #[cfg(not(debug_assertions))]
-    log::debug!("Device SSE client connected for device {}", device_id);
-
-    broadcaster.new_device_client(device_id).await
+    log::debug!("Device SSE client connected for device {device_id}");
+    broadcaster.new_device_client(device_id)
 }
 
 use clap::Parser;
@@ -113,7 +102,16 @@ struct Args {
     #[clap(long, default_value = "8099")]
     udp_port: u16,
 
-    /// Address to bind the HTTP server to
+    /// Join this IPv4 multicast group (on --udp-port) instead of plain unicast
+    #[clap(long)]
+    multicast_group: Option<String>,
+
+    /// Local interface address used to join the multicast group
+    #[clap(long, default_value = "0.0.0.0")]
+    multicast_iface: String,
+
+    /// Address to bind the HTTP server to. Use 0.0.0.0 to let other machines
+    /// (e.g. the Android app) open the dashboard.
     #[clap(long, default_value = "127.0.0.1")]
     http_addr: String,
 
@@ -153,6 +151,8 @@ mod assets {
             "image/png"
         } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
             "image/jpeg"
+        } else if path.ends_with(".woff2") {
+            "font/woff2"
         } else if path.ends_with(".wasm") {
             "application/wasm"
         } else {
@@ -163,7 +163,7 @@ mod assets {
     /// Cache policy per asset type:
     /// - HTML → no-cache (always revalidate; routing pages must stay fresh)
     /// - Hashed bundles (index-*.js) → immutable, 1 year
-    /// - Versioned vendor files (plotly-x.y.z.min.js, xlsx.full.min.js) → 7 days
+    /// - Versioned vendor files (plotly-x.y.z.min.js, xlsx, vendor/ fonts and libraries) → 7 days
     /// - App JS/CSS (plot.js, styles.css) → no-cache (no content hash in name)
     fn cache_control_for(path: &str) -> &'static str {
         if path.ends_with(".html") || path.is_empty() {
@@ -171,7 +171,11 @@ mod assets {
         } else if path.contains("/assets/index-") && path.ends_with(".js") {
             // Vite-hashed bundle — content never changes for this filename
             "public, max-age=31536000, immutable"
-        } else if path.contains(".min.js") || path.ends_with(".glb") || path.ends_with(".wasm") {
+        } else if path.contains(".min.js")
+            || path.starts_with("vendor/")
+            || path.ends_with(".glb")
+            || path.ends_with(".wasm")
+        {
             // Versioned vendor files — safe to cache for a week
             "public, max-age=604800"
         } else {
