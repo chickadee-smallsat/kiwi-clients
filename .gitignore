@@ -6,7 +6,15 @@
 **/*.csv
 node_modules
 dist
+
+# Build outputs
 plotly-client/web/3d
-plotly-app/resources/binkiwi-desktop/src-tauri/gen/
-kiwi-desktop/src-tauri/target/
-kiwi-desktop/node_modules/
+plotly-app/resources/bin
+kiwi-desktop/src-tauri/resources
+
+# Test outputs
+playwright-report
+test-results
+
+# Local scratch (old patch scripts, backups)
+.archive
