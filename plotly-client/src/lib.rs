@@ -4,6 +4,7 @@ use std::{io, sync::Arc};
 use actix_files as fs;
 use actix_web::{App, HttpServer, Responder, dev::ServerHandle, get, middleware::Logger, web};
 
+mod ble;
 mod broadcast;
 mod udp;
 #[cfg(target_os = "ios")]
@@ -22,9 +23,12 @@ pub struct Args {
     pub http_port: u16,
     /// Disable launching a browser on startup
     pub no_open: bool,
+    /// Disable the Bluetooth LE receiver
+    pub no_ble: bool,
 }
 
-/// Starts the HTTP server and UDP listener and runs until the server stops.
+/// Starts the HTTP server, the UDP listener and (unless disabled) the Bluetooth LE
+/// receiver, and runs until the server stops.
 ///
 /// `on_ready` is invoked once the `HttpServer` has been bound, with a handle that can be used
 /// to stop the server from another thread (see [`ServerHandle::stop`]).
@@ -53,6 +57,13 @@ pub async fn run_async(args: Args, on_ready: impl FnOnce(ServerHandle)) -> io::R
             udp::udp_listener_unicast(bindaddr, broadcaster, running).await;
         }
     });
+    // The BLE receiver is stopped explicitly once the HTTP server exits, so it
+    // can disconnect from devices while the runtime is still alive.
+    let (ble_stop, ble_stop_rx) = tokio::sync::watch::channel(false);
+    let ble_task = (!args.no_ble).then(|| {
+        let broadcaster = Arc::clone(&data);
+        actix_web::rt::spawn(ble::ble_listener(broadcaster, ble_stop_rx))
+    });
 
     let server = HttpServer::new(move || {
         let app = App::new()
@@ -77,7 +88,12 @@ pub async fn run_async(args: Args, on_ready: impl FnOnce(ServerHandle)) -> io::R
     .run();
 
     on_ready(server.handle());
-    server.await
+    let result = server.await;
+    let _ = ble_stop.send(true);
+    if let Some(ble_task) = ble_task {
+        let _ = ble_task.await;
+    }
+    result
 }
 
 /// Blocking wrapper around [`run_async`] that owns its own actix runtime.

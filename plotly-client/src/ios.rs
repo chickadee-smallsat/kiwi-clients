@@ -14,8 +14,8 @@ fn handle_slot() -> &'static Mutex<Option<ServerHandle>> {
     SERVER_HANDLE.get_or_init(|| Mutex::new(None))
 }
 
-/// Starts the HTTP server (bound to `127.0.0.1:http_port`) and the UDP listener
-/// (bound to `0.0.0.0:udp_port`) on a background thread. Returns immediately; poll
+/// Starts the HTTP server (bound to `127.0.0.1:http_port`), the UDP listener
+/// (bound to `0.0.0.0:udp_port`) and the Bluetooth LE receiver on a background thread. Returns immediately; poll
 /// `http://127.0.0.1:<http_port>/devices` from Swift to detect readiness, matching the desktop
 /// Electron shell's startup pattern.
 ///
@@ -37,6 +37,7 @@ pub extern "C" fn kiwi_start(http_port: u16, udp_port: u16) -> i32 {
         http_addr: "127.0.0.1".to_string(),
         http_port,
         no_open: true,
+        no_ble: false,
     };
 
     std::thread::spawn(move || {

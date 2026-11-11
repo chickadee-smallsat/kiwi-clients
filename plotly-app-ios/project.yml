@@ -22,8 +22,12 @@ targets:
         GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
         INFOPLIST_KEY_CFBundleDisplayName: "Kiwi Plotter"
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Kiwi Plotter connects to Kiwi devices over Bluetooth to receive their measurement data."
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Kiwi Plotter listens on your local network for measurement data broadcast by Kiwi devices."
         MARKETING_VERSION: "0.1.0"
+        # The Rust static library uses CoreBluetooth (btleplug) for the BLE receiver;
+        # link directives from a staticlib are not carried into the app link.
+        OTHER_LDFLAGS: ["$(inherited)", "-framework", "CoreBluetooth"]
         CURRENT_PROJECT_VERSION: "1"
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: GYYK7RFX66

@@ -172,6 +172,7 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Kiwi Plotter";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kiwi Plotter connects to Kiwi devices over Bluetooth to receive their measurement data.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kiwi Plotter listens on your local network for measurement data broadcast by Kiwi devices.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -180,6 +181,11 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					CoreBluetooth,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.chickadee.kiwiplotter;
 				SDKROOT = iphoneos;
 				SWIFT_OBJC_BRIDGING_HEADER = "KiwiPlotter/Bridging/KiwiPlotter-Bridging-Header.h";
@@ -320,6 +326,7 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Kiwi Plotter";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kiwi Plotter connects to Kiwi devices over Bluetooth to receive their measurement data.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kiwi Plotter listens on your local network for measurement data broadcast by Kiwi devices.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -328,6 +335,11 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					CoreBluetooth,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.chickadee.kiwiplotter;
 				SDKROOT = iphoneos;
 				SWIFT_OBJC_BRIDGING_HEADER = "KiwiPlotter/Bridging/KiwiPlotter-Bridging-Header.h";

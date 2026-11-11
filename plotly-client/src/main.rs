@@ -22,6 +22,10 @@ struct Args {
     /// Disable launching a browser on startup
     #[clap(long, default_value_t = false)]
     no_open: bool,
+
+    /// Disable the Bluetooth LE receiver
+    #[clap(long, default_value_t = false)]
+    no_ble: bool,
 }
 
 impl From<Args> for RunArgs {
@@ -32,6 +36,7 @@ impl From<Args> for RunArgs {
             http_addr: a.http_addr,
             http_port: a.http_port,
             no_open: a.no_open,
+            no_ble: a.no_ble,
         }
     }
 }

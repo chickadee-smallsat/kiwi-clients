@@ -21,11 +21,13 @@ env_logger = "0.11"
 futures-util = "0.3"
 log = "0.4"
 parking_lot = "0.12"
-tokio = { version = "1.48", features = ["sync", "io-util", "rt"] }
+tokio = { version = "1.48", features = ["sync", "io-util", "rt", "time", "macros"] }
 tokio-stream = "0.1"
 clap = { version = "4.3", features = ["derive"] }
 atomic-time = "0.1"
 socket2 = "0.6"
+btleplug = "0.13.5"
+uuid = "1"
 kiwi-measurements = { workspace = true, features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.145"
