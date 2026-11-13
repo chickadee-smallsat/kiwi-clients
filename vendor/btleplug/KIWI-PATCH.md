@@ -20,3 +20,13 @@ Fix:
 - `src/corebluetooth/adapter.rs`: on `DeviceDiscovered`, always build a new
   `Peripheral` from the event receiver and replace the stored one.
 - `src/common/adapter_manager.rs`: add `AdapterManager::replace_peripheral`.
+
+## CoreBluetooth: successful disconnects logged as errors
+
+`PeripheralInternal::confirm_disconnect` failed every pending operation with
+`Err("Device disconnected")`, including the `disconnect()` request it was
+completing, so `Peripheral::disconnect` logged "Shouldn't get anything but Ok!"
+after every successful disconnect (it still returned `Ok(())`).
+
+Fix (`src/corebluetooth/internal.rs`): `confirm_disconnect` answers pending
+disconnect requests with `Ok` before failing the remaining operations.

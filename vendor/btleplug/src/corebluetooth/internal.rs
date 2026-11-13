@@ -583,6 +583,13 @@ impl PeripheralInternal {
     }
 
     pub fn confirm_disconnect(&mut self) {
+        // KIWI PATCH: a disconnect request is completed by the disconnect, so
+        // answer it with Ok. Upstream failed it with the same error as every
+        // other pending operation, making `Peripheral::disconnect` log
+        // "Shouldn't get anything but Ok!" on every successful disconnect.
+        for future in self.disconnected_future_state.drain(..) {
+            future.lock().unwrap().set_reply(CoreBluetoothReply::Ok);
+        }
         self.drain_pending_operations("Device disconnected");
     }
 
