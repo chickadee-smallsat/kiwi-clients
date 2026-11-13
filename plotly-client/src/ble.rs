@@ -3,7 +3,7 @@
 //! the notified packets into the [`Broadcaster`], exactly like UDP packets.
 //!
 //! A Kiwi only streams over BLE after its BOOTSEL button has been pressed to
-//! switch it from WiFi to Bluetooth mode. It accepts one connection at a time
+//! switch it from WiFi to Bluetooth mode. It accepts several clients at once
 //! and needs no pairing.
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
@@ -26,7 +26,8 @@ use crate::{broadcast::Broadcaster, udp::DataRateCounter};
 
 /// Kiwi data service, advertised by the firmware in BLE mode
 pub const KIWI_SERVICE_UUID: Uuid = Uuid::from_u128(0x6b697769_0001_4a6e_8f3b_2c9d5e7a1b00);
-/// Measurement characteristic: one `SingleMeasurement` per notification
+/// Measurement characteristic: one or more back-to-back `SingleMeasurement`s
+/// per notification
 pub const KIWI_MEASUREMENT_UUID: Uuid = Uuid::from_u128(0x6b697769_0002_4a6e_8f3b_2c9d5e7a1b00);
 
 /// How long to wait before retrying when no adapter is available or scanning failed
@@ -41,6 +42,11 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const FLUSH_PERIOD: Duration = Duration::from_millis(100);
 /// How long sessions get to disconnect cleanly on shutdown
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
+/// How often a streaming session checks that its link is still up
+const LIVENESS_PERIOD: Duration = Duration::from_secs(2);
+/// A session that receives nothing for this long is considered dead. The
+/// firmware notifies at least an RSSI packet every 2 s while connected.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Stop signal: becomes `true` (or the sender is dropped) when the receiver must shut down
 pub type Stop = watch::Receiver<bool>;
@@ -246,6 +252,11 @@ async fn session(
     let mut batch: Vec<SingleMeasurement> = Vec::new();
     let mut warned_short = false;
     let mut next_flush = Instant::now() + FLUSH_PERIOD;
+    // The notification stream does not end when the link drops (at least on
+    // macOS, btleplug keeps its sender alive), so poll the link state and fall
+    // back to an idle timeout to notice a dead session.
+    let mut liveness = time::interval(LIVENESS_PERIOD);
+    let mut last_rx = Instant::now();
     loop {
         tokio::select! {
             _ = stopped(&mut stop) => break,
@@ -256,6 +267,7 @@ async fn session(
                 if notification.uuid != KIWI_MEASUREMENT_UUID {
                     continue;
                 }
+                last_rx = Instant::now();
                 let value = notification.value;
                 if let Some((rate, unit)) = datarate.update(value.len()) {
                     log::info!("[BLE] {label}: receiving data rate: {rate:.3} {unit}");
@@ -271,17 +283,30 @@ async fn session(
                     }
                     continue;
                 }
-                match SingleMeasurement::try_from(&value[..SINGLE_MEASUREMENT_SIZE]) {
-                    Ok(mes) => {
-                        sink.register_device(&device_id).await;
-                        // Id packets rename the device rather than being buffered as data
-                        if let CommonMeasurement::Id(ref id_str) = mes.measurement {
-                            sink.rename_device(&device_id, id_str.as_str()).await;
-                        } else {
-                            batch.push(mes);
+                // A notification carries one or more back-to-back measurements
+                for chunk in value.chunks_exact(SINGLE_MEASUREMENT_SIZE) {
+                    match SingleMeasurement::try_from(chunk) {
+                        Ok(mes) => {
+                            sink.register_device(&device_id).await;
+                            // Id packets rename the device rather than being buffered as data
+                            if let CommonMeasurement::Id(ref id_str) = mes.measurement {
+                                sink.rename_device(&device_id, id_str.as_str()).await;
+                            } else {
+                                batch.push(mes);
+                            }
                         }
+                        Err(e) => log::warn!("[BLE] {label}: received invalid measurement: {e:?}"),
                     }
-                    Err(e) => log::warn!("[BLE] {label}: received invalid measurement: {e:?}"),
+                }
+            }
+            _ = liveness.tick() => {
+                if !peripheral.is_connected().await.unwrap_or(false) {
+                    log::info!("[BLE] {label}: link lost");
+                    break;
+                }
+                if last_rx.elapsed() > IDLE_TIMEOUT {
+                    log::warn!("[BLE] {label}: no data for {IDLE_TIMEOUT:?}, dropping session");
+                    break;
                 }
             }
             _ = time::sleep_until(next_flush) => {
