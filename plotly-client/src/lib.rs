@@ -2,7 +2,7 @@ use std::{io, sync::Arc};
 
 #[cfg(debug_assertions)]
 use actix_files as fs;
-use actix_web::{App, HttpServer, Responder, dev::ServerHandle, get, middleware::Logger, web};
+use actix_web::{App, HttpServer, Responder, get, middleware::Logger, web};
 
 mod ble;
 mod broadcast;
@@ -10,6 +10,16 @@ mod udp;
 #[cfg(target_os = "ios")]
 mod ios;
 use self::broadcast::Broadcaster;
+
+/// Handle for stopping a running server, passed to `on_ready` (re-exported so
+/// embedding shells don't need their own actix-web dependency)
+pub use actix_web::dev::ServerHandle;
+
+/// The most recent error binding the UDP socket device data arrives on, or
+/// `None` once it is bound. The listener keeps retrying in the background.
+pub fn udp_bind_error() -> Option<String> {
+    udp::UDP_BIND_ERROR.lock().clone()
+}
 
 #[derive(Debug, Clone)]
 pub struct Args {
@@ -25,6 +35,10 @@ pub struct Args {
     pub no_open: bool,
     /// Disable the Bluetooth LE receiver
     pub no_ble: bool,
+    /// Don't let actix-web handle SIGINT/SIGTERM by stopping the server. Set
+    /// when embedded in an app, which owns the process and stops the server
+    /// itself through the [`ServerHandle`].
+    pub no_signals: bool,
 }
 
 /// Starts the HTTP server, the UDP listener and (unless disabled) the Bluetooth LE
@@ -84,8 +98,8 @@ pub async fn run_async(args: Args, on_ready: impl FnOnce(ServerHandle)) -> io::R
         app.wrap(Logger::default())
     })
     .bind((args.http_addr.as_str(), args.http_port))?
-    .workers(2)
-    .run();
+    .workers(2);
+    let server = if args.no_signals { server.disable_signals() } else { server }.run();
 
     on_ready(server.handle());
     let result = server.await;

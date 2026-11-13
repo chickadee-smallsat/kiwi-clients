@@ -38,6 +38,7 @@ pub extern "C" fn kiwi_start(http_port: u16, udp_port: u16) -> i32 {
         http_port,
         no_open: true,
         no_ble: false,
+        no_signals: true,
     };
 
     std::thread::spawn(move || {

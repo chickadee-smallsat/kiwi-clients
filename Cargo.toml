@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["udp-dummy-server", "plotly-client"]
+members = ["udp-dummy-server", "plotly-client", "plotly-app/src-tauri"]
+# The Tauri app needs the platform webview SDK (webkit2gtk on Linux), so build
+# it explicitly: `npm --prefix plotly-app run dev` or `cargo build -p kiwi-plotter`
+default-members = ["udp-dummy-server", "plotly-client"]
 
 [workspace.dependencies]
 kiwi-measurements = { version = "0.3", default-features = false }

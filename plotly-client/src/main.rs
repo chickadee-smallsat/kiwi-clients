@@ -37,6 +37,7 @@ impl From<Args> for RunArgs {
             http_port: a.http_port,
             no_open: a.no_open,
             no_ble: a.no_ble,
+            no_signals: false,
         }
     }
 }

@@ -284,8 +284,8 @@ async fn session(
                     continue;
                 }
                 // A notification carries one or more back-to-back measurements
-                for chunk in value.chunks_exact(SINGLE_MEASUREMENT_SIZE) {
-                    match SingleMeasurement::try_from(chunk) {
+                for chunk in value.as_chunks::<SINGLE_MEASUREMENT_SIZE>().0 {
+                    match SingleMeasurement::try_from(&chunk[..]) {
                         Ok(mes) => {
                             sink.register_device(&device_id).await;
                             // Id packets rename the device rather than being buffered as data

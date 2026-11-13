@@ -1,4 +1,4 @@
-name: build-electron
+name: build-desktop
 
 on:
   workflow_dispatch:
@@ -17,53 +17,57 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # 22.04 so the AppImage runs on distros with an older glibc
+          - os: ubuntu-22.04
             artifact_name: linux
             dist_script: dist:linux
-            artifact_path: plotly-app/dist/*.AppImage
+            artifact_path: target/release/bundle/appimage/*.AppImage
           - os: windows-latest
             artifact_name: windows
-            dist_script: dist:win:ci
-            artifact_path: plotly-app/dist/*.zip
-            file_suffix: -x64
+            dist_script: dist:win
+            artifact_path: target/release/bundle/nsis/*.zip
           - os: windows-11-arm
             artifact_name: windows-arm64
-            dist_script: dist:win:ci:arm64
-            artifact_path: plotly-app/dist/*.zip
-            file_suffix: -arm64
+            dist_script: dist:win
+            artifact_path: target/release/bundle/nsis/*.zip
           - os: macos-latest
             artifact_name: macos
-            dist_script: dist:mac:ci
-            artifact_path: plotly-app/dist/*.dmg
+            dist_script: dist:mac
+            artifact_path: target/release/bundle/dmg/*.dmg
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Needed for the Tauri CLI and for plotly-client's build script, which
+      # builds the kiwi-3d frontend
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: plotly-app/package-lock.json
-
-      - name: Cache Electron binary
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/electron
-            ~/Library/Caches/electron
-            %LOCALAPPDATA%\electron\Cache
-          key: electron-${{ runner.os }}-${{ hashFiles('plotly-app/package-lock.json') }}
+          cache-dependency-path: |
+            plotly-app/package-lock.json
+            plotly-client/kiwi-3d/package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.artifact_name }}
+
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libxdo-dev \
+            libssl-dev libdbus-1-dev pkg-config build-essential patchelf file
 
+      # tauri.conf.json takes its version from plotly-app/package.json
       - name: Set package version from tag
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
@@ -75,22 +79,15 @@ jobs:
       - name: Install Node dependencies
         run: npm --prefix plotly-app ci
 
-      - name: Build Electron package
+      - name: Build Tauri bundle
         run: npm --prefix plotly-app run ${{ matrix.dist_script }}
 
-      - name: Rename Windows artifact
-        if: matrix.file_suffix != ''
-        shell: bash
-        run: |
-          for f in plotly-app/dist/*.exe; do
-            mv "$f" "${f%.exe}${{ matrix.file_suffix }}.exe"
-          done
-
-      - name: Zip Windows executables
+      # Installer names already carry the architecture (_x64-setup / _arm64-setup)
+      - name: Zip Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          foreach ($f in Get-ChildItem plotly-app/dist/*.exe) {
+          foreach ($f in Get-ChildItem target/release/bundle/nsis/*.exe) {
             Compress-Archive -Path $f.FullName -DestinationPath "$($f.DirectoryName)\$($f.BaseName).zip"
           }
 

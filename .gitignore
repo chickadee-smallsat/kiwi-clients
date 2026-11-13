@@ -7,7 +7,7 @@
 node_modules
 dist
 plotly-client/web/3d
-plotly-app/resources
+plotly-app/src-tauri/gen
 kiwi-desktop/src-tauri/gen/
 kiwi-desktop/src-tauri/target/
 kiwi-desktop/src-tauri/gen/

@@ -1,71 +1,19 @@
 {
-  "name": "kiwi-frontend",
+  "name": "kiwi-plotter",
   "version": "0.1.0",
   "private": true,
-  "description": "Electron wrapper for the plotly-client Rust server",
+  "description": "Tauri desktop shell for the plotly-client Rust server",
   "author": "Chickadee",
   "license": "UNLICENSED",
-  "main": "main.cjs",
   "scripts": {
-    "build:rust": "cargo build --release -p plotly-client",
-    "prepare:bin": "node scripts/prepare-binary.cjs",
-    "start": "electron .",
-    "dev": "npm run build:rust && npm run prepare:bin && npm run start",
-    "pack": "npm run build:rust && npm run prepare:bin && electron-builder --dir",
-    "dist": "npm run build:rust && npm run prepare:bin && electron-builder",
-    "dist:linux": "npm run build:rust && npm run prepare:bin && electron-builder --linux AppImage",
-    "dist:win": "npm run build:rust && npm run prepare:bin && electron-builder --win nsis",
-    "dist:win:ci": "npm run build:rust && npm run prepare:bin && electron-builder --win nsis --x64",
-    "dist:win:ci:arm64": "npm run build:rust && npm run prepare:bin && electron-builder --win nsis --arm64",
-    "dist:mac": "npm run build:rust && npm run prepare:bin && electron-builder --mac dmg zip",
-    "dist:mac:ci": "npm run build:rust && npm run prepare:bin && electron-builder --mac dmg"
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "dist": "tauri build",
+    "dist:linux": "tauri build --bundles appimage",
+    "dist:win": "tauri build --bundles nsis",
+    "dist:mac": "tauri build --bundles dmg"
   },
   "devDependencies": {
-    "electron": "^41.2.0",
-    "electron-builder": "^26.8.1"
-  },
-  "build": {
-    "appId": "com.chickadee.kiwi-plotter",
-    "productName": "Kiwi Plotter",
-    "icon": "assets/icon",
-    "asar": true,
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "main.cjs",
-      "preload.cjs",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "resources/bin/",
-        "to": "bin/",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Utility"
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    },
-    "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "category": "public.app-category.utilities",
-      "extendInfo": {
-        "NSBluetoothAlwaysUsageDescription": "Kiwi Plotter connects to Kiwi devices over Bluetooth to receive their measurement data."
-      }
-    }
+    "@tauri-apps/cli": "2.12.4"
   }
 }

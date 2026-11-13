@@ -12,6 +12,10 @@ use tokio::{net::UdpSocket, time};
 
 use crate::broadcast::Broadcaster;
 
+/// Most recent error binding the unicast UDP socket, cleared once a bind
+/// succeeds. Lets an embedding shell warn the user (see [`crate::udp_bind_error`]).
+pub(crate) static UDP_BIND_ERROR: parking_lot::Mutex<Option<String>> = parking_lot::Mutex::new(None);
+
 pub async fn udp_listener_unicast(
     bind: SocketAddrV4,
     sink: Arc<Broadcaster>,
@@ -21,9 +25,13 @@ pub async fn udp_listener_unicast(
     while running.load(Ordering::Relaxed) {
         log::trace!("[UDPU] Listening for UDP packets from {bind}");
         let socket = match UdpSocket::bind(bind).await {
-            Ok(sock) => sock,
+            Ok(sock) => {
+                *UDP_BIND_ERROR.lock() = None;
+                sock
+            }
             Err(e) => {
                 log::error!("[UDPU] Failed to bind UDP socket: {e}");
+                *UDP_BIND_ERROR.lock() = Some(e.to_string());
                 time::sleep(Duration::from_secs(1)).await;
                 continue;
             }
